@@ -182,8 +182,8 @@ void setup() {//=======================SETUP===============================
   if (!LoRa.begin(workFrequency)) {             // initialize radio at workFrequency
     DEBUGln("LoRa init failed. Check your connections.");
     while (true) {
-      flashStatusLed(4);    // if failed, do nothing
-      delay(1000);
+      flashStatusLed(6);    // if failed, do nothing
+      delay(4000);
     }
   }
 
@@ -214,15 +214,16 @@ void   processButton() {
   currButtonState = !digitalRead(PIN_BUTTON); // Читаем состояние кнопки 1=нажата; 0=отпущена
   if (prevButtonState != currButtonState) {   //button pressed or released
     firstPressButton = true;
-    DEBUGln("processButton(): " + String(currButtonState));
+    DEBUGln("\nprocessButton(): " + String(currButtonState));
     prevButtonState = currButtonState;
-    if (commSession( CMD_SIGNAL, currButtonState, CMD_SIGNAL_OK, 3 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
+    if (commSession( CMD_SIGNAL, currButtonState, \
+                     CMD_SIGNAL_OK, 3 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
       updateFBLed(currButtonState);
       updatePWMLed(currButtonState);
     }
     else {
       updatePWMLed(false);
-      updateFBLed(false);
+      //      updateFBLed(false);
       flashStatusLed(2);
     }
   }
@@ -230,19 +231,19 @@ void   processButton() {
 
 void processCommand() {
   if (wasReceived) {
-    DEBUGln(F("=== processCommand() start ==="));
+    DEBUGln(F("--- processCommand() start ---"));
 
-    DEBUGln(("\tReply number: ") + String(rcvCount));
-    DEBUGln(("\tReply command: ") + String(rcvCmd));
-    DEBUGln(("\tReply Data: ") + String(rcvData));
+    //    DEBUGln(("\tReply number: ") + String(rcvCount));
+    //    DEBUGln(("\tReply command: ") + String(rcvCmd));
+    //    DEBUGln(("\tReply Data: ") + String(rcvData));
 
     DEBUGln(("\tRSSI: ") + String(lastRSSI));
     DEBUGln(("\tSnr: ") + String(lastSNR));
     DEBUGln(("\tTurnaround: ") + String(lastTurnaround));
     DEBUGln(("\tFrequency Error: ") + String(lastFrequencyError));
-    DEBUGln(("\tWorking Frequency: ") + String(workFrequency));
+    DEBUGln(("\tWorking Frequency OLD:\t") + String(workFrequency));
     workFrequency = workFrequency - lastFrequencyError / 2;
-    DEBUGln(("\tWorking Frequency after update: ") + String(workFrequency));
+    DEBUGln(("\tWorking Frequency NEW:\t") + String(workFrequency));
     LoRa.setFrequency(workFrequency);
     delay(30);
     wasReceived = false;
@@ -255,22 +256,23 @@ void   processPing() {
   if (!firstPressButton) return;
   if (pingFlash) {// ping reply was already received, FB led is on, processing FB led off only
     if ((millis() - pingFlashTimer) > PING_FLASH) { //end led flash
-      DEBUGln("Ping LED OFF");
+      DEBUGln(F("\tPing LED OFF"));
       pingFlash = false;
       updateFBLed(currButtonState);
     }
     return;  //??
   }
   if ((millis() - pingTimer) > PING_TIMEOUT) { // long time was no command - initiate ping
-    DEBUGln("Start Ping");
-    if (commSession( CMD_PING, currButtonState, CMD_PONG, 3 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
-      DEBUGln("Ping LED ON");
+    DEBUGln(F("\nStart Ping"));
+    if (commSession( CMD_PING, currButtonState, CMD_PONG, \
+                     3 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
+      DEBUGln(F("\tPing LED ON"));
       updateFBLed(!currButtonState);
       pingFlash = true;
       pingFlashTimer = millis();
     }
     else {
-      updateFBLed(false);
+      //      updateFBLed(false);
       flashStatusLed(2);
     }
   }
@@ -313,16 +315,17 @@ float batteryVoltage() {
 }
 
 void stopWorking() {
-  while (1) {
   flashlLedBattery(7);
-  delay(7000);
+  delay(5000);
+  flashlLedBattery(7);
+  while (1) {
   }
 }
 
 void flashlLedBattery(byte times) { //flash 3 times total 1.5 sec
   DEBUGln("flashLedBattery()");
   bool flash = false;
-  for (int i = 0; i < times*2; i++) {
+  for (int i = 0; i < times * 2; i++) {
     digitalWrite(PIN_BATTERY_LED, flash);
     flash = !flash;
     delay(200);
@@ -340,15 +343,14 @@ void updatePWMLed(bool ledStatus) { // turn ON or OFF the Status LED
   //  DEBUGln("updatePWMLed(): " + String(ledStatus));
 }
 
-void flashStatusLed(byte times) { //flash 3 times total 1.5 sec
+void flashStatusLed(byte times) { //flash n times
   DEBUGln("flashStatusLed()");
-  bool flash = false;
-  for (int i = 0; i < times*2; i++) {
-    updateFBLed(flash);
-    flash = !flash;
-    delay(150);
+  for (int i = 0; i < times; i++) {
+    updateFBLed(true);
+    delay(100);
+    updateFBLed(false);
+    delay(200);
   }
-  delay(200);
 }
 
 void setLoRaParams() {

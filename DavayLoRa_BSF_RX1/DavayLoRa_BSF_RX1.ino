@@ -180,8 +180,8 @@ void setup() {//=======================SETUP===============================
   if (!LoRa.begin(workFrequency)) {             // initialize radio
     DEBUGln(F("LoRa init failed. Check your connections."));
     while (true) {
-      flashStatusLed(4);    // if LoRa failed, blink and do nothing
-      delay(1000);
+      flashStatusLed(6);    // if LoRa failed, blink and do nothing
+      delay(4000);
     }
   }
 
@@ -198,8 +198,10 @@ void setup() {//=======================SETUP===============================
 
 void loop() { //  ===!!!===!!!===!!!===LOOP===!!!===!!!===!!!===!!!===!!!===
 
-  processTimeOut();  //see if we haven't lost connection to TX
-  processCommand();
+  if (rcvCmd)
+    processCommand();
+  else
+    processTimeOut();  //see if we haven't received from TX
   processCutoff();
   EVERY_MS(BATTERY_PERIOD) {
     processBattery();
@@ -209,32 +211,32 @@ void loop() { //  ===!!!===!!!===!!!===LOOP===!!!===!!!===!!!===!!!===!!!===
 
 void   processTimeOut() {
   if ((millis() - pingTimeOutLastTime) > PING_TIMEOUT) { // if long time no signal from TX
+    DEBUGln(F("ZZZZZZZ"));
     signalStatus = false;
     pingTimeOutLastTime = millis();
-    flashStatusLed(3);
+    flashStatusLed(2);
   }
 }// processTimeOut()
 
 void processCommand() {
-
   switch (rcvCmd) {
     case CMD_SIGNAL:
-      DEBUGln(F("===CMD_SIGNAL==="));
+      DEBUGln(F("=== CMD_SIGNAL ==="));
       signalStatus = rcvData;
       processSignal();
       sendMessage(rcvAddress, msgNumber, CMD_SIGNAL_OK, signalStatus);
       break;
     case CMD_PING:
-      DEBUGln(F("===CMD_PING==="));
+      updateStatusLed(true);
+      DEBUGln(F("=== CMD_PING ==="));
       signalStatus = rcvData;
       processSignal();
-      updateStatusLed(true);
-      unsigned long flashStatus = millis();
+      //      unsigned long flashStatus = millis();
       sendMessage(rcvAddress, msgNumber, CMD_PONG, signalStatus);
-      unsigned long restDelay = 100 - (millis() - flashStatus);
-      if (restDelay > 0) {
-        delay(restDelay);
-      }
+      //      unsigned long restDelay = 100 - (millis() - flashStatus);
+      //      if (restDelay > 0) {
+      //        delay(restDelay);
+      //      }
       updateStatusLed(false);
   }
   rcvCmd = 0;
@@ -319,7 +321,7 @@ void sendMessage(byte msgAddr, byte msgNumber, byte msgCmd, byte msgData) {
 //}
 
 void onReceive(int packetSize) {
-  DEBUGln(F("<<<Package Received!"));
+  DEBUGln(F("\n<<<Package Received!"));
   if (packetSize != 4) { //нас интересуют только пакеты в 4 байта
     DEBUGln("\tWrong Packet Size: " + String(packetSize));
     return;          // not our packet, return
