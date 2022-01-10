@@ -1,25 +1,53 @@
 /*
-  LoRa Adafruit Feather32u4 433MHz module
-  Davay RX, based on Duplex communication wth callback example
-  Listens for a message from TX, about the button pressed/released.
-  Turnes LED|Buzzer|Vibro  ON/OFF and replies to TX when receives.
-  Для каждой пары TX-RX надо поменять в коде частоту, делитель батарейки и выбрать MY_ADDRESS
-  Для изменений искать (Ctrl-F), пометив слово: МЕНЯТЬ 
+  Код ПРИЁМНИКА для проекта DavayLoRa
+  RX принимает  команды от TX, когда там нажата/отпущена кнопка, или TX пингует его по таймеру
+  Посылается ответ-подтверждение на каждое сообщение.
+  Проектировался под LoRa Adafruit Feather32u4 433MHz module
+  В дальнейшем адаптирован для более доступной платы BSFrance LoRa32u4 - которая ПОЧТИ копия.
+  Отличия модулей:
+  - физические размеры
+  - отличаются делители напряжения измерения батарейки - следует произвести подстройку в коде
+  - У BSFrance нужно перерезать перемычку на плате, помеченную: "Closed DI01 -> 6" )
+  Для каждой пары TX-RX надо указать в коде одинаковую рабочую частоту
+  (изменять её рекомендуется по 0.1 мегагерц, в пределах рабочего диапазона 433.05E6 - 434.79E6)
+  и/или выбрать одинаковый совместный байт WORK_ADDRESS
+  Для задуманных возможных изменений в коде пометить здесь слово МЕНЯТЬ, и искать его (Ctrl-F)
+  СОЕДИНЕНИЯ (см. также схему Fritzing и картинку):
+    DIP3 переключатели выбора вызывающих эффектов
+      один контакт всех 3 переключателей совместно -> BAT микропроцессора (или + батареи)
+      противоположные контакты (точный порядок неважен):
+        1 -> (+) основных LED
+        2 -> (+) биппера
+        3 -> (+) баззера
+    Баззер и биппер -
+      (+) -> на DIP3 - см. выше
+      (-) -> совместно на сток (drain или D) - центральный контакт MOSFET-2
+    Большие светодиоды индикации вызова
+      плюс -> на DIP3 - см. выше
+      R (Red) -> сток (drain) полевого тр-ра MOSFET-1 (центральный вывод)
+    MOSFET-1 60NO3 - управляет включением ЛЕДов
+      управляющий (gate) полевого тр-ра (левый вывод) -> 6 микропроцессора
+      исток (source) полевого тр-ра (правый вывод) -> GND
+    MOSFET-2 60NO3 - управляет включением баззера и биппера
+      управляющий (gate) полевого тр-ра (левый вывод) -> 5 микропроцессора
+      исток (source) полевого тр-ра (правый вывод) -> GND
+    Переключатель выключения
+      центр (или край) -> GND
+      край (или центр) -> EN микропроцессора
+      при замкнутом переключателе прибор ВЫключен (заряжать батарейку от USB при этом можно)
+      при разомкнутом переключателе - прибор включен
+    Батарею LiPo 1S подключить или припаять к своему JST разъёму
+    USB порт можно использовать в любое время для зарядки батареи или заливки прошивки
 */
 
 #include <SPI.h>              // include libraries
 #include <LoRa.h>
-//#include <EEPROM.h>
-
-#ifdef ARDUINO_SAMD_MKRWAN1300  //not my code :)
-#error "This code is not compatible with the Arduino MKR WAN 1300 board!"
-#endif
 
 // Дебагирование с компьютером : раскомментить для использования 1 строчку:
-//#define DEBUG_ENABLE
+#define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
-#define DEBUG(x) Serial.print(String(millis())+" "+x)
-#define DEBUGln(x) Serial.println(String(millis())+" "+x)
+#define DEBUG(x) Serial.print(x)
+#define DEBUGln(x) Serial.println(x)
 #else
 #define DEBUG(x)
 #define DEBUGln(x)
@@ -51,18 +79,19 @@ long minFQ = round(MIN_FQ / 1.0E5) * 1.0E5;
 #define PING_FLASH_ACTIVE 200  //ms
 #define PING_FLASH_PAUSE 400  //ms
 #define BATTERY_MIN 3.3   //Volt min. - ниже этого программа пытается не работать, хотя используемые батарейки самоотключаются при 2.7В
+#define BATTERY_PERIOD 60000 //Каждые столько миллисекунд измеряется напряжение батареи 
 
 #define PIN_SIGNAL_LED  6  // Номер пина для вывода сигнала для ЛЕДа
 #define PIN_SIGNAL_BUZZERS  5  // Номер пина для вывода сигнала для Баззера и Вибро
-#define PIN_LED  LED_BUILTIN  // Номер пина, к которому подключен вывод статусного ЛЕД-а (LED_BUILTIN=13) 
+#define PIN_STATUS_LED  LED_BUILTIN  // Номер пина, к которому подключен вывод статусного ЛЕД-а (LED_BUILTIN=13) 
 #define PIN_BATTERY 9  // Номер пина Адафрута для измерения батарейки
 #define PIN_BATTERY_LED LED_BUILTIN  // Номер пина для показа напряжения батарейки
 
-//МЕНЯТЬ Коэффициент делителя для измерения батарейки. 
+//МЕНЯТЬ Коэффициент делителя для измерения батарейки.
 //Для Adafruit поставить 2, для BSFrance поставить 1.27
-float batteryVoltageMultiplier = 2;
+float batteryVoltageMultiplier = 1.27;
 
-//Дефолтовые значения для SPI библиотеки: 10, 9, 2. Для наших плат действуют такие: 
+//Дефолтовые значения для SPI библиотеки: 10, 9, 2. Для наших плат действуют такие:
 const int csPin = 8;          // LoRa radio chip select
 const int resetPin = 4;       // LoRa radio reset
 const int irqPin = 7;         // change for your board; must be a hardware interrupt pin
@@ -82,7 +111,7 @@ const int irqPin = 7;         // change for your board; must be a hardware inter
 #define CMD_PONG        213 //RX отвечает с состоянием леда
 #define CMD_PING_OK     213 //то же что предыдущее
 
-//МЕНЯТЬ синхронно для TX и RX в диапазоне 0-254 
+//МЕНЯТЬ синхронно для TX и RX в диапазоне 0-254
 #define MY_ADDRESS      78
 
 byte workAddress = MY_ADDRESS;  // address of connection
@@ -103,9 +132,7 @@ float lastSNR;
 unsigned long lastTurnaround;         // round-trip time between tx and rx
 long lastFrequencyError;
 
-unsigned long timeOutFlashPhase;
-unsigned long timeOutFlashTime;
-bool timeOutFlash;
+unsigned long pingTimeOutLastTime;
 
 int pwmledBrightness = 20;           // 0 - 255 - Яркость большого леда
 
@@ -114,6 +141,7 @@ unsigned long cutoffTimer = 0;
 #define CUTOFF_TIME 2000  //ms - максимальное время работы сигнала
 
 void setup() {//=======================SETUP===============================
+  delay(2000);   // Give time to the ATMega32u4 port to wake up and be recognized by the OS.
 
   // initialize serial
 #ifdef DEBUG_ENABLE
@@ -121,33 +149,39 @@ void setup() {//=======================SETUP===============================
   while (!Serial);
 #endif
 
-  DEBUGln("================================");
-  DEBUGln("=========== START RX ===========");
-  DEBUGln("Davay LoRa RX setup()");
+  DEBUGln(F("================================"));
+  DEBUGln(F("=========== START RX ==========="));
+  DEBUGln(F("DavayLoRa RX setup()"));
 
   // override the default CS, reset, and IRQ pins (optional)
   LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
+  delay(300);
 
   //INIT PINS
-  pinMode(PIN_LED, OUTPUT);
+  pinMode(PIN_STATUS_LED, OUTPUT);
   pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
   pinMode(PIN_SIGNAL_LED, OUTPUT);
   analogWrite(PIN_SIGNAL_LED, 0); //just in case - switch off FB on big led
   digitalWrite(PIN_BATTERY_LED, 0);
+  digitalWrite(PD5, HIGH);  //где-то видел, что этот пин надо поставить в Хай для измерения батареи...
+  delay(300);
 
   // два раза показываем заряд батарейки:
   showBatteryVoltage();
+  delay(2000);   //
   showBatteryVoltage();
+  delay(2000);   //
 
-//МЕНЯТЬ рабочую частоту (синхронно на TX и RX!)
-//Желательно сильно не уходить от значения 434E6 ()
-//просто добавлять-убавлять десятые, например: 433.9E6, 433.8E6, или 434.1E6, 434.2E6  
- workFrequency = 434E6;
+  //МЕНЯТЬ рабочую частоту (синхронно на TX и RX!)
+  //Желательно сильно не уходить от значения 434E6 ()
+  //просто добавлять-убавлять десятые, например: 433.9E6, 433.8E6, или 434.1E6, 434.2E6
+  workFrequency = 434E6;
 
-  if (!LoRa.begin(workFrequency)) {             // initialize radio at CALL Frequency
-    DEBUGln("LoRa init failed. Check your connections.");
+  if (!LoRa.begin(workFrequency)) {             // initialize radio
+    DEBUGln(F("LoRa init failed. Check your connections."));
     while (true) {
-      flashlLedError();    // if failed, do nothing
+      flashStatusLed(4);    // if LoRa failed, blink and do nothing
+      delay(1000);
     }
   }
 
@@ -157,7 +191,9 @@ void setup() {//=======================SETUP===============================
   //  LoRa.onTxDone(onTxDone);
   LoRa.receive(); //Always listen by default
 
-  DEBUGln("Setup complete");
+  pingTimeOutLastTime = millis();
+
+  DEBUGln(F("DavayLoRa RX setup complete"));
 }//setup      //===================END SETUP===============================
 
 void loop() { //  ===!!!===!!!===!!!===LOOP===!!!===!!!===!!!===!!!===!!!===
@@ -165,25 +201,17 @@ void loop() { //  ===!!!===!!!===!!!===LOOP===!!!===!!!===!!!===!!!===!!!===
   processTimeOut();  //see if we haven't lost connection to TX
   processCommand();
   processCutoff();
-  EVERY_MS(100000) {
+  EVERY_MS(BATTERY_PERIOD) {
     processBattery();
   }
 
 }//loop()         ===!!!===!!!===!!!===END LOOP===!!!===!!!===!!!===!!!===!!!===
 
 void   processTimeOut() {
-  if ((millis() - lastSendTime) > PING_TIMEOUT) { // if long time no signal from TX
+  if ((millis() - pingTimeOutLastTime) > PING_TIMEOUT) { // if long time no signal from TX
     signalStatus = false;
-    if ((millis() - timeOutFlashTime) > timeOutFlashPhase) {
-      timeOutFlash = !timeOutFlash;
-      if (timeOutFlash) {
-        timeOutFlashPhase = PING_FLASH_ACTIVE;
-      } else {
-        timeOutFlashPhase = PING_FLASH_PAUSE;
-      }
-      timeOutFlashTime = millis();
-      updateLed(timeOutFlash);
-    }
+    pingTimeOutLastTime = millis();
+    flashStatusLed(3);
   }
 }// processTimeOut()
 
@@ -191,23 +219,23 @@ void processCommand() {
 
   switch (rcvCmd) {
     case CMD_SIGNAL:
-      DEBUGln("===CMD_SIGNAL===");
+      DEBUGln(F("===CMD_SIGNAL==="));
       signalStatus = rcvData;
       processSignal();
       sendMessage(rcvAddress, msgNumber, CMD_SIGNAL_OK, signalStatus);
       break;
     case CMD_PING:
-      DEBUGln("===CMD_PING===");
+      DEBUGln(F("===CMD_PING==="));
       signalStatus = rcvData;
       processSignal();
-      updateLed(true);
+      updateStatusLed(true);
       unsigned long flashStatus = millis();
       sendMessage(rcvAddress, msgNumber, CMD_PONG, signalStatus);
       unsigned long restDelay = 100 - (millis() - flashStatus);
       if (restDelay > 0) {
         delay(restDelay);
       }
-      updateLed(false);
+      updateStatusLed(false);
   }
   rcvCmd = 0;
 } //void processCommand()
@@ -220,31 +248,30 @@ void  processSignal() {
 }
 
 void processCutoff() {
-  if (millis()-cutoffTimer>CUTOFF_TIME) {
+  if (millis() - cutoffTimer > CUTOFF_TIME) {
     signalStatus = 0;
     analogWrite(PIN_SIGNAL_LED, 0);
     digitalWrite(PIN_SIGNAL_BUZZERS, 0);
   }
 }
 
-void updateLed(bool ledStatus) { // turn ON or OFF the status LED
-  digitalWrite(PIN_LED, ledStatus);
-  DEBUGln("updateLed: " + String(ledStatus));
-}// updateLed(bool ledStatus)
+void updateStatusLed(bool ledStatus) { // turn ON or OFF the status LED
+  digitalWrite(PIN_STATUS_LED, ledStatus);
+  //  DEBUGln("updateStatusLed: " + String(ledStatus));
+}// updateStatusLed(bool ledStatus)
 
-void flashlLedError() { //flash 3 times total 1.5 sec
-  DEBUGln("flashlLedError()");
-  bool flash = false;
-  for (int i = 0; i < 6; i++) {
+void flashStatusLed(byte times) { //flash "times" times
+  //  DEBUGln("flashStatusLed()");
+  bool flash = true;
+  for (int i = 0; i < times * 2; i++) {
+    updateStatusLed(flash);
     flash = !flash;
-    updateLed(flash);
-    delay(200);
+    delay(150);
   }
-  delay(300);
 }
 
 long frequencyByChannel(byte numChannel) {
-  DEBUGln("frequencyByChannel(byte numChannel)");
+  DEBUGln(F("frequencyByChannel(byte numChannel)"));
   if (numChannel > NUM_LORA_CHANNELS) {
     DEBUGln("Invalid Channel: " + String(numChannel));
     return CALL_FQ;
@@ -254,7 +281,7 @@ long frequencyByChannel(byte numChannel) {
 // done frequencyByChannel(byte numChannel)
 
 void setLoRaParams() {
-  DEBUGln("setLoRaParams()");
+  DEBUGln(F("setLoRaParams()"));
   //Set LoRa for Longest Range:
   LoRa.setTxPower(20, PA_OUTPUT_PA_BOOST_PIN);    //max
   LoRa.setSignalBandwidth(125E3);                 //..31.25E3, 41.7E3, 62.5E3, (125E3), and 250E3.
@@ -266,20 +293,22 @@ void setLoRaParams() {
 }// DONE void setLoRaParams()
 
 void sendMessage(byte msgAddr, byte msgNumber, byte msgCmd, byte msgData) {
+  DEBUGln(F(">>>Sending Message"));
 
   while (!LoRa.beginPacket()) {
-    DEBUGln("Waiting to begin REPLY");
+    DEBUGln(F("\tWaiting to begin REPLY"));
   }                   // start packet
   LoRa.write(msgAddr);              // reply address
   LoRa.write(msgNumber);              // reply Msg Number
   LoRa.write(msgCmd);                  // reply command
   LoRa.write(msgData);                 // reply Data
   while (!LoRa.endPacket()) {            // finish packet and send it
-    DEBUGln("Waiting to finish REPLY");
+    DEBUGln(F("\tWaiting to finish REPLY"));
   }
   lastSendTime = millis();            // timestamp the message
+  pingTimeOutLastTime = lastSendTime; //variable for Ping Timeout
   LoRa.receive();                     // go back into receive mode
-  DEBUGln(("sendMessage done: ") + String(msgAddr)\
+  DEBUGln(("\tMessage sent: ") + String(msgAddr)\
           + " " + String(msgNumber) + " " + String(msgCmd) + " " + String(msgData));
 }// void sendMessage(byte messageByte)
 
@@ -290,9 +319,9 @@ void sendMessage(byte msgAddr, byte msgNumber, byte msgCmd, byte msgData) {
 //}
 
 void onReceive(int packetSize) {
-  DEBUGln("Package Received!");
+  DEBUGln(F("<<<Package Received!"));
   if (packetSize != 4) { //нас интересуют только пакеты в 4 байта
-    DEBUGln("Wrong Packet Size: " + String(packetSize));
+    DEBUGln("\tWrong Packet Size: " + String(packetSize));
     return;          // not our packet, return
   }
 
@@ -310,69 +339,69 @@ void onReceive(int packetSize) {
 #endif
 
   if (rcvAddress != workAddress) {
-    DEBUGln("Wrong Address: " + String(rcvAddress) + " - " +  String(workAddress));
+    DEBUGln("\tWrong Address: " + String(rcvAddress) + " - " +  String(workAddress));
     return;
   }
 
   msgNumber = rcvCount;
 
-  DEBUGln("RSSI: " + String(lastRSSI));
-  DEBUGln("Snr: " + String(lastSNR));
-  DEBUGln("Turnaround: " + String(lastTurnaround));
-  DEBUGln("Frequency Error: " + String(lastFrequencyError));
-  DEBUGln("Received Message: "  + String(rcvAddress) + " " + String(rcvCount)\
+  DEBUGln("\tRSSI:\t" + String(lastRSSI));
+  DEBUGln("\tSnr:\t" + String(lastSNR));
+  DEBUGln("\tTurnaround:\t" + String(lastTurnaround));
+  DEBUGln("\tFrequency Error:\t" + String(lastFrequencyError));
+  DEBUGln("\tReceived Message:\t"  + String(rcvAddress) + " " + String(rcvCount)\
           +" " + String( rcvCmd) + " " + String( rcvData));
 
 }//void onReceive(int packetSize)
 
 void processBattery() {
-
   if (batteryVoltage() < BATTERY_MIN) {
     stopWorking();
   }
-
-}
+}////processBattery()
 
 void showBatteryVoltage() {
   float voltage = batteryVoltage();
-  delay(1000);
-  if (voltage > 3.5)   flashBatteryOnce(); //1 раз
-  if (voltage > 3.6)   flashBatteryOnce(); //2 раз
-  if (voltage > 3.7)   flashBatteryOnce(); //3 раз
-  if (voltage > 3.8)   flashBatteryOnce(); //4 раз
-  if (voltage > 4.0)   flashBatteryOnce(); //5 раз
-  delay(1000);
+  //  delay(1000);
+  if (voltage > 3.5)   flashBatteryLedOnce(); //1 раз
+  if (voltage > 3.6)   flashBatteryLedOnce(); //2 раз
+  if (voltage > 3.7)   flashBatteryLedOnce(); //3 раз
+  if (voltage > 3.8)   flashBatteryLedOnce(); //4 раз
+  if (voltage > 4.0)   flashBatteryLedOnce(); //5 раз
 }
 
-void flashBatteryOnce() {
+void flashBatteryLedOnce() {
   digitalWrite(PIN_BATTERY_LED, 1);
-  delay(250);
+  delay(200);
   digitalWrite(PIN_BATTERY_LED, 0);
-  delay(250);
+  delay(200);
 }
 
 float batteryVoltage() {
   float measuredvbat = analogRead(PIN_BATTERY);
+  measuredvbat = analogRead(PIN_BATTERY);
   measuredvbat *= batteryVoltageMultiplier;    // multiply according to the used board divider
   measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
   measuredvbat /= 1024; // convert to voltage
-  DEBUGln("Battery Voltage: " + measuredvbat);
+  DEBUG(F("Battery Voltage: "));
+  DEBUGln(measuredvbat);
   return measuredvbat;
-}
+}////batteryVoltage()
 
 void stopWorking() {
-  flashlLedBattery();
+  flashLedBattery(7);
+  delay(5000);
+  flashLedBattery(7);
   while (1) {
   }
 }
 
-void flashlLedBattery() { //flash 3 times total 1.5 sec
-  DEBUGln("flashlLedError()");
-  bool flash = false;
-  for (int i = 0; i < 8; i++) {
-    flash = !flash;
+void flashLedBattery(byte times) { //flash "times" times
+  DEBUGln(F("flashLedBattery()"));
+  bool flash = true;
+  for (int i = 0; i < times * 2; i++) {
     digitalWrite(PIN_BATTERY_LED, flash);
+    flash = !flash;
     delay(200);
   }
-  delay(1000);
 }
