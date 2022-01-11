@@ -37,6 +37,7 @@
 
 #include <SPI.h>              // include libraries
 #include <LoRa.h>
+#include <GyverPower.h>
 
 // Дебагирование: раскомментить для использования 1 строчку:
 //#define DEBUG_ENABLE
@@ -73,8 +74,8 @@
 #define PING_TIMEOUT 3000  //ms
 #define PING_FLASH 100  //ms
 #define BATTERY_MIN 3.3   //Volt min.
-#define BATTERY_PERIOD 60000 //Каждые столько миллисекунд измеряется напряжение батареи 
-#define BIG_TIMEOUT 3600000 //Через час «холостой» работы передатчик прекращает пинг
+#define BATTERY_PERIOD  300000 //Каждые столько миллисекунд измеряется напряжение батареи 
+#define BIG_TIMEOUT    3600000 //Через час «холостой» работы передатчик прекращает пинг
 
 #define PIN_BUTTON  6  // Номер пина Arduino, к которому подключен вывод кнопки (притянуто к 5в)
 #define PIN_FB_LED  5  // Номер пина Arduino, к которому подключен вывод LED обратной связи
@@ -141,8 +142,10 @@ bool pingFlash;
 int fbledBrightness = 255;           // 0 - 255 - Яркость леда в кнопке
 int pwmledBrightness = 15;           // 0 - 30 - Яркость большого леда (больше 30 - слишком ярко! и много потребляет )
 
+
 void setup() {//=======================SETUP===============================
   delay(2000);   // Give time to the ATMega32u4 port to wake up and be recognized by the OS.
+  power.hardwareEnable(PWR_ALL);
 
   // initialize serial
 #ifdef DEBUG_ENABLE
@@ -325,6 +328,9 @@ void stopWorking() {
   delay(5000);
   flashlLedBattery(7);
   while (1) {
+    power.setSleepMode(POWERDOWN_SLEEP); // Крепко засыпаем
+    delay(100); // даем время на отправку
+    power.sleep(SLEEP_FOREVER); // спим до перезагрузки 
   }
 }
 

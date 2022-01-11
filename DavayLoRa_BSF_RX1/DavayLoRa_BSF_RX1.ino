@@ -42,6 +42,8 @@
 
 #include <SPI.h>              // include libraries
 #include <LoRa.h>
+#include <GyverPower.h>
+
 
 // Дебагирование с компьютером : раскомментить для использования 1 строчку:
 //#define DEBUG_ENABLE
@@ -76,8 +78,6 @@ long minFQ = round(MIN_FQ / 1.0E5) * 1.0E5;
 
 
 #define PING_TIMEOUT 5000  //ms
-#define PING_FLASH_ACTIVE 200  //ms
-#define PING_FLASH_PAUSE 400  //ms
 #define BATTERY_MIN 3.3   //Volt min. - ниже этого программа пытается не работать, хотя используемые батарейки самоотключаются при 2.7В
 #define BATTERY_PERIOD 60000 //Каждые столько миллисекунд измеряется напряжение батареи 
 
@@ -140,8 +140,10 @@ int pwmledBrightness = 20;           // 0 - 255 - Яркость большог�
 unsigned long cutoffTimer = 0;
 #define CUTOFF_TIME 2000  //ms - максимальное время работы сигнала
 
+
 void setup() {//=======================SETUP===============================
   delay(2000);   // Give time to the ATMega32u4 port to wake up and be recognized by the OS.
+  power.hardwareEnable(PWR_ALL);
 
   // initialize serial
 #ifdef DEBUG_ENABLE
@@ -395,6 +397,10 @@ void stopWorking() {
   delay(5000);
   flashLedBattery(7);
   while (1) {
+    power.setSleepMode(POWERDOWN_SLEEP); // Крепко засыпаем
+    delay(100); // даем время на отправку
+    power.sleep(SLEEP_FOREVER); // спим до перезагрузки
+
   }
 }
 
