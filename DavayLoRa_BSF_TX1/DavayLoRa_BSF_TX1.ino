@@ -39,7 +39,7 @@
 #include <LoRa.h>
 
 // Дебагирование: раскомментить для использования 1 строчку:
-#define DEBUG_ENABLE
+//#define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
 #define DEBUG(x) Serial.print(x)
 #define DEBUGln(x) Serial.println(x)
@@ -68,13 +68,13 @@
 //#define WORKING_CHANNEL 5                 //fixed. supposed controlled by jumpers or by scan
 //#define BROADCAST_ADDRESS 0xFF
 
-#define DEFAULT_TIMEOUT 300               //начальный таймаут для получения фидбяка (мс)
+#define DEFAULT_TIMEOUT 300    //начальный таймаут для отзыва приёмника (мс)
 #define WORK_COMM_ATTEMPTS 3
 #define PING_TIMEOUT 3000  //ms
 #define PING_FLASH 100  //ms
-#define PING_FLASH_PAUSE 400  //ms Не используется - тут для симметричности с RX
-#define BATTERY_MIN 3.4   //Volt min.
+#define BATTERY_MIN 3.3   //Volt min.
 #define BATTERY_PERIOD 60000 //Каждые столько миллисекунд измеряется напряжение батареи 
+#define BIG_TIMEOUT 3600000 //Через час «холостой» работы передатчик прекращает пинг
 
 #define PIN_BUTTON  6  // Номер пина Arduino, к которому подключен вывод кнопки (притянуто к 5в)
 #define PIN_FB_LED  5  // Номер пина Arduino, к которому подключен вывод LED обратной связи
@@ -128,6 +128,7 @@ float lastSNR;
 unsigned long lastTurnaround = 100;         // round-trip time between tx and rx
 long lastFrequencyError;
 unsigned long expectedTimeout = DEFAULT_TIMEOUT;
+unsigned long lastButtonTime; //the last time button was active
 
 bool currButtonState = 0;               //Current state of Button, initially OFF
 bool prevButtonState = 0;               //Previous state of Button, initially OFF
@@ -213,6 +214,7 @@ void loop() { //  ===!!!===!!!===!!!===!!!= LOOP =!!!===!!!===!!!===!!!===!!!===
 void   processButton() {
   currButtonState = !digitalRead(PIN_BUTTON); // Читаем состояние кнопки 1=нажата; 0=отпущена
   if (prevButtonState != currButtonState) {   //button pressed or released
+    lastButtonTime = millis();
     firstPressButton = true;
     DEBUGln("\nprocessButton(): " + String(currButtonState));
     prevButtonState = currButtonState;
@@ -224,7 +226,7 @@ void   processButton() {
     else {
       updatePWMLed(false);
       //      updateFBLed(false);
-      flashStatusLed(2);
+      flashStatusLed(3);
     }
   }
 }//void   processButton()
@@ -275,6 +277,10 @@ void   processPing() {
       //      updateFBLed(false);
       flashStatusLed(2);
     }
+  }
+  if ((millis() - lastButtonTime) > BIG_TIMEOUT) { // 1 hour no button avtivity
+    flashStatusLed(3);  //flash 3 times and
+    firstPressButton = false; //return to the state like after switch-on - no pings
   }
 }//void   processPing()
 

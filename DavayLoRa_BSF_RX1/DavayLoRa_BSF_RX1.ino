@@ -44,7 +44,7 @@
 #include <LoRa.h>
 
 // Дебагирование с компьютером : раскомментить для использования 1 строчку:
-#define DEBUG_ENABLE
+//#define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
 #define DEBUG(x) Serial.print(x)
 #define DEBUGln(x) Serial.println(x)
