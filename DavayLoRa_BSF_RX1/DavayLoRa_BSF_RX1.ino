@@ -1,3 +1,5 @@
+//  Для возможных изменений в коде пометить здесь слово МЕНЯТЬ, и искать его (Ctrl-F)
+
 /*
   Код ПРИЁМНИКА для проекта DavayLoRa
   RX принимает  команды от TX, когда там нажата/отпущена кнопка, или TX пингует его по таймеру
@@ -11,33 +13,36 @@
   Для каждой пары TX-RX надо указать в коде одинаковую рабочую частоту
   (изменять её рекомендуется по 0.1 мегагерц, в пределах рабочего диапазона 433.05E6 - 434.79E6)
   и/или выбрать одинаковый совместный байт WORK_ADDRESS
-  Для задуманных возможных изменений в коде пометить здесь слово МЕНЯТЬ, и искать его (Ctrl-F)
+
   СОЕДИНЕНИЯ (см. также схему Fritzing и картинку):
-    DIP3 переключатели выбора вызывающих эффектов
+  - Перерезать перемычку на плате BSFrance, помеченную: "Closed DI01 -> 6" )
+  - DIP3 переключатели выбора вызывающих эффектов
       один контакт всех 3 переключателей совместно -> BAT микропроцессора (или + батареи)
       противоположные контакты (точный порядок неважен):
         1 -> (+) основных LED
         2 -> (+) биппера
         3 -> (+) баззера
-    Баззер и биппер -
+  - Баззер и биппер -
       (+) -> на DIP3 - см. выше
       (-) -> совместно на сток (drain или D) - центральный контакт MOSFET-2
-    Большие светодиоды индикации вызова
+  - Большие светодиоды индикации вызова
       плюс -> на DIP3 - см. выше
       R (Red) -> сток (drain) полевого тр-ра MOSFET-1 (центральный вывод)
-    MOSFET-1 60NO3 - управляет включением ЛЕДов
+  - MOSFET-1 60NO3 - управляет включением ЛЕДов
       управляющий (gate) полевого тр-ра (левый вывод) -> 6 микропроцессора
       исток (source) полевого тр-ра (правый вывод) -> GND
-    MOSFET-2 60NO3 - управляет включением баззера и биппера
+  - MOSFET-2 60NO3 - управляет включением баззера и биппера
       управляющий (gate) полевого тр-ра (левый вывод) -> 5 микропроцессора
       исток (source) полевого тр-ра (правый вывод) -> GND
-    Переключатель выключения
+  - Переключатель выключения
       центр (или край) -> GND
       край (или центр) -> EN микропроцессора
       при замкнутом переключателе прибор ВЫключен (заряжать батарейку от USB при этом можно)
       при разомкнутом переключателе - прибор включен
-    Батарею LiPo 1S подключить или припаять к своему JST разъёму
-    USB порт можно использовать в любое время для зарядки батареи или заливки прошивки
+  - Батарею LiPo 1S подключить или припаять к своему JST разъёму
+
+    USB порт можно использовать для зарядки батареи - в любое время 
+      и для заливки прошивки (при разомкнутом переключателе)
 */
 
 #include <SPI.h>              // include libraries
@@ -76,10 +81,18 @@ long minFQ = round(MIN_FQ / 1.0E5) * 1.0E5;
 #define WORKING_CHANNEL 5
 #define BROADCAST_ADDRESS 0xFF
 
+//МЕНЯТЬ - напряжение «отсечки» - по результатам использования
+#define BATTERY_MIN_VOLTAGE 3.5   //Volt min.
+#define BATTERY_VOLTAGE_1 3.5 // Мигание 1 раз
+#define BATTERY_VOLTAGE_2 3.6
+#define BATTERY_VOLTAGE_3 3.8
+#define BATTERY_VOLTAGE_4 3.9
+#define BATTERY_VOLTAGE_5 4.0
 
-#define PING_TIMEOUT 5000  //ms
-#define BATTERY_MIN 3.3   //Volt min. - ниже этого программа пытается не работать, хотя используемые батарейки самоотключаются при 2.7В
-#define BATTERY_PERIOD 60000 //Каждые столько миллисекунд измеряется напряжение батареи 
+//МЕНЯТЬ - надо, чтобы пинг приёмника был больше, чем у передатчика
+#define PING_TIMEOUT 5000  //ms 
+
+#define BATTERY_PERIOD 300000 //(5 минут) Каждые столько миллисекунд измеряется напряжение батареи 
 
 #define PIN_SIGNAL_LED  6  // Номер пина для вывода сигнала для ЛЕДа
 #define PIN_SIGNAL_BUZZERS  5  // Номер пина для вывода сигнала для Баззера и Вибро
@@ -155,10 +168,6 @@ void setup() {//=======================SETUP===============================
   DEBUGln(F("=========== START RX ==========="));
   DEBUGln(F("DavayLoRa RX setup()"));
 
-  // override the default CS, reset, and IRQ pins (optional)
-  LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
-  delay(300);
-
   //INIT PINS
   pinMode(PIN_STATUS_LED, OUTPUT);
   pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
@@ -168,6 +177,14 @@ void setup() {//=======================SETUP===============================
   digitalWrite(PD5, HIGH);  //где-то видел, что этот пин надо поставить в Хай для измерения батареи...
   delay(300);
 
+  //Приветственный сигнал 1 сек
+  updateStatusLed(true);
+  delay(1000);
+  updateStatusLed(false);
+  delay(1000);
+
+  DEBUGln("Battery Test");
+  processBattery(); //Если заряд батарейки недостаточен, то моргаем 7 раз (если можем!) и выключаемся
   // два раза показываем заряд батарейки:
   showBatteryVoltage();
   delay(2000);   //
@@ -178,6 +195,10 @@ void setup() {//=======================SETUP===============================
   //Желательно сильно не уходить от значения 434E6 ()
   //просто добавлять-убавлять десятые, например: 433.9E6, 433.8E6, или 434.1E6, 434.2E6
   workFrequency = 434E6;
+
+  // override the default CS, reset, and IRQ pins (optional)
+  LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
+  delay(300);
 
   if (!LoRa.begin(workFrequency)) {             // initialize radio
     DEBUGln(F("LoRa init failed. Check your connections."));
@@ -359,7 +380,7 @@ void onReceive(int packetSize) {
 }//void onReceive(int packetSize)
 
 void processBattery() {
-  if (batteryVoltage() < BATTERY_MIN) {
+  if (batteryVoltage() < BATTERY_MIN_VOLTAGE) {
     stopWorking();
   }
 }////processBattery()
@@ -367,14 +388,14 @@ void processBattery() {
 void showBatteryVoltage() {
   float voltage = batteryVoltage();
   //  delay(1000);
-  if (voltage > 3.5)   flashBatteryLedOnce(); //1 раз
-  if (voltage > 3.6)   flashBatteryLedOnce(); //2 раз
-  if (voltage > 3.7)   flashBatteryLedOnce(); //3 раз
-  if (voltage > 3.8)   flashBatteryLedOnce(); //4 раз
-  if (voltage > 4.0)   flashBatteryLedOnce(); //5 раз
+  if (voltage > BATTERY_VOLTAGE_1)   flashBatteryLEDOnce(); //1 раз
+  if (voltage > BATTERY_VOLTAGE_2)   flashBatteryLEDOnce(); //2 раз
+  if (voltage > BATTERY_VOLTAGE_3)   flashBatteryLEDOnce(); //3 раз
+  if (voltage > BATTERY_VOLTAGE_4)   flashBatteryLEDOnce(); //4 раз
+  if (voltage > BATTERY_VOLTAGE_5)   flashBatteryLEDOnce(); //5 раз
 }
 
-void flashBatteryLedOnce() {
+void flashBatteryLEDOnce() {
   digitalWrite(PIN_BATTERY_LED, 1);
   delay(200);
   digitalWrite(PIN_BATTERY_LED, 0);

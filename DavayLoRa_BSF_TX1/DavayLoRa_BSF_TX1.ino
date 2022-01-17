@@ -1,3 +1,5 @@
+//  Для возможных изменений в коде пометить здесь слово МЕНЯТЬ, и искать его (Ctrl-F)
+
 /*
   Код ПЕРЕДАТЧИКА для проекта DavayLoRa
   TX отправляет сообщение на RX, когда нажата/отпущена кнопка, или пингует его по таймеру
@@ -11,28 +13,30 @@
   Для каждой пары TX-RX надо указать в коде одинаковую рабочую частоту
   (изменять её рекомендуется по 0.1 мегагерц, в пределах рабочего диапазона 433.05E6 - 434.79E6)
   и/или выбрать одинаковый совместный байт WORK_ADDRESS
-  Для задуманных возможных изменений в коде пометить здесь слово МЕНЯТЬ, и искать его (Ctrl-F)
+
   СОЕДИНЕНИЯ (см. также схему Fritzing и картинку):
-    Кнопка нормально разомкнутая (NO), со встроенным светодиодом (+/-), использумым для индикации
+  - Перерезать перемычку на плате BSFrance, помеченную: "Closed DI01 -> 6" )
+  - Кнопка нормально разомкнутая (NO), со встроенным светодиодом (+/-), использумым для индикации
     обратной связи, батарейки и ошибок.
       NO (любой) -> GND
       NO (другой) -> 6 микропроцессора
       светодиод (+) -> 5 микропроцессора
       светодиод (-) -> GND (или соединить с NO, который GND)
-    Большой светодиод (используется для индикации вызова при нажатии на кнопку)
+  - Большой светодиод (используется для индикации вызова при нажатии на кнопку)
       плюс -> BAT микропроцессора (или + батареи)
       минус -> сток (drain) полевого тр-ра (центральный вывод)
-    MOSFET 60NO3
+  - MOSFET 60NO3
       управляющий (gate) полевого тр-ра (левый вывод) -> 11 микропроцессора
       исток (source) полевого тр-ра (правый вывод) -> GND
-    Переключатель выключения
+  - Переключатель выключения
       центр (или край) -> GND
       край (или центр) -> EN микропроцессора
       (при замкнутом переключателе прибор вЫключен, заряжать батарейку при этом можно;
       при разомкнутом - прибор включен)
-    Батарею LiPo 1S подключить или припаять к своему JST разъёму
-    USB порт можно использовать в любое время для зарядки батареи или заливки прошивки
-
+  - Батарею LiPo 1S подключить или припаять к своему JST разъёму
+ 
+    USB порт можно использовать для зарядки батареи - в любое время 
+      и для заливки прошивки (при разомкнутом переключателе)
 */
 
 #include <SPI.h>              // include libraries
@@ -69,12 +73,23 @@
 //#define WORKING_CHANNEL 5                 //fixed. supposed controlled by jumpers or by scan
 //#define BROADCAST_ADDRESS 0xFF
 
+//МЕНЯТЬ - напряжение «отсечки» - по результатам использования
+#define BATTERY_MIN_VOLTAGE 3.5   //Volt min.
+#define BATTERY_VOLTAGE_1 3.5  // Мигание 1 раз
+#define BATTERY_VOLTAGE_2 3.6
+#define BATTERY_VOLTAGE_3 3.8
+#define BATTERY_VOLTAGE_4 3.9
+#define BATTERY_VOLTAGE_5 4.0
+
+//МЕНЯТЬ - надо только, чтобы пинг приёмника был больше, чем у передатчика
+#define PING_TIMEOUT 3000  //ms
+
 #define DEFAULT_TIMEOUT 300    //начальный таймаут для отзыва приёмника (мс)
 #define WORK_COMM_ATTEMPTS 3
-#define PING_TIMEOUT 3000  //ms
 #define PING_FLASH 100  //ms
-#define BATTERY_MIN 3.3   //Volt min.
-#define BATTERY_PERIOD  300000 //Каждые столько миллисекунд измеряется напряжение батареи 
+#define BATTERY_PERIOD  300000 //(5 минут) Каждые столько миллисекунд измеряется напряжение батареи 
+
+//МЕНЯТЬ - (если надо)
 #define BIG_TIMEOUT    3600000 //Через час «холостой» работы передатчик прекращает пинг
 
 #define PIN_BUTTON  6  // Номер пина Arduino, к которому подключен вывод кнопки (притянуто к 5в)
@@ -145,7 +160,7 @@ int pwmledBrightness = 15;           // 0 - 30 - Яркость большого
 
 void setup() {//=======================SETUP===============================
   delay(2000);   // Give time to the ATMega32u4 port to wake up and be recognized by the OS.
-  power.hardwareEnable(PWR_ALL);
+  power.hardwareEnable(PWR_ALL); //На всякий случай включим все системы микропроцессора
 
   // initialize serial
 #ifdef DEBUG_ENABLE
@@ -156,10 +171,6 @@ void setup() {//=======================SETUP===============================
   DEBUGln("================================");
   DEBUGln("=========== START TX ===========");
   DEBUGln("DavayLoRa TX setup()");
-
-  // override the library default CS, reset, and IRQ pins
-  LoRa.setPins(csPin, resetPin, irqPin);  // set CS, reset, IRQ pin
-  delay(300);
 
   //INIT PINS for button and status LEDs:
   pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -172,11 +183,23 @@ void setup() {//=======================SETUP===============================
   //  digitalWrite(PD5, HIGH);
   delay(300);
 
+  //Приветственный сигнал 1 сек
+  updateStatusLed(true);
+  delay(1000);
+  updateStatusLed(false);
+  delay(1000);
+
+  DEBUGln("Battery Test");
+  processBattery(); //Если заряд батарейки недостаточен, то моргаем 7 раз и не работаем
   // два раза показываем заряд батарейки:
   showBatteryVoltage();
   delay(2000);   //
   showBatteryVoltage();
   delay(2000);   //
+
+  // override the library default CS, reset, and IRQ pins
+  LoRa.setPins(csPin, resetPin, irqPin);  // set CS, reset, IRQ pin
+  delay(300);
 
   //МЕНЯТЬ рабочую частоту (синхронно на TX и RX!) в диапазоне 433.1E6 - 434.8E6
   //Желательно сильно не уходить от значения 434E6 ()
@@ -201,7 +224,7 @@ void setup() {//=======================SETUP===============================
 
   DEBUGln("DavayLoRa TX setup complete");
 
-}//setup      //======================= SETUP ===============================
+}//setup      //======================= /SETUP ===============================
 
 void loop() { //  ===!!!===!!!===!!!===!!!= LOOP =!!!===!!!===!!!===!!!===!!!===
 
@@ -223,12 +246,12 @@ void   processButton() {
     prevButtonState = currButtonState;
     if (commSession( CMD_SIGNAL, currButtonState, \
                      CMD_SIGNAL_OK, 3 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
-      updateFBLed(currButtonState);
+      updateStatusLed(currButtonState);
       updatePWMLed(currButtonState);
     }
     else {
       updatePWMLed(false);
-      //      updateFBLed(false);
+      //      updateStatusLed(false);
       flashStatusLed(3);
     }
   }
@@ -263,7 +286,7 @@ void   processPing() {
     if ((millis() - pingFlashTimer) > PING_FLASH) { //end led flash
       DEBUGln(F("\tPing LED OFF"));
       pingFlash = false;
-      updateFBLed(currButtonState);
+      updateStatusLed(currButtonState);
     }
     return;  //??
   }
@@ -272,12 +295,12 @@ void   processPing() {
     if (commSession( CMD_PING, currButtonState, CMD_PONG, \
                      3 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
       DEBUGln(F("\tPing LED ON"));
-      updateFBLed(!currButtonState);
+      updateStatusLed(!currButtonState);
       pingFlash = true;
       pingFlashTimer = millis();
     }
     else {
-      //      updateFBLed(false);
+      //      updateStatusLed(false);
       flashStatusLed(2);
     }
   }
@@ -289,7 +312,7 @@ void   processPing() {
 
 void processBattery() {
 
-  if (batteryVoltage() < BATTERY_MIN) {
+  if (batteryVoltage() < BATTERY_MIN_VOLTAGE) {
     stopWorking();
   }
 
@@ -298,14 +321,14 @@ void processBattery() {
 void showBatteryVoltage() {
   float voltage = batteryVoltage();
   //  delay(1000);
-  if (voltage > 3.5)   flashBatteryOnce(); //1 раз
-  if (voltage > 3.6)   flashBatteryOnce(); //2 раз
-  if (voltage > 3.7)   flashBatteryOnce(); //3 раз
-  if (voltage > 3.8)   flashBatteryOnce(); //4 раз
-  if (voltage > 4.0)   flashBatteryOnce(); //5 раз
+  if (voltage > BATTERY_VOLTAGE_1)   flashBatteryLEDOnce(); //1 раз
+  if (voltage > BATTERY_VOLTAGE_2)   flashBatteryLEDOnce(); //2 раз
+  if (voltage > BATTERY_VOLTAGE_3)   flashBatteryLEDOnce(); //3 раз
+  if (voltage > BATTERY_VOLTAGE_4)   flashBatteryLEDOnce(); //4 раз
+  if (voltage > BATTERY_VOLTAGE_5)   flashBatteryLEDOnce(); //5 раз
 }
 
-void flashBatteryOnce() {
+void flashBatteryLEDOnce() {
   digitalWrite(PIN_BATTERY_LED, 1);
   delay(250);
   digitalWrite(PIN_BATTERY_LED, 0);
@@ -330,7 +353,7 @@ void stopWorking() {
   while (1) {
     power.setSleepMode(POWERDOWN_SLEEP); // Крепко засыпаем
     delay(100); // даем время на отправку
-    power.sleep(SLEEP_FOREVER); // спим до перезагрузки 
+    power.sleep(SLEEP_FOREVER); // спим до перезагрузки
   }
 }
 
@@ -344,9 +367,9 @@ void flashlLedBattery(byte times) { //flash 3 times total 1.5 sec
   }
 }
 
-void updateFBLed(bool ledStatus) { // turn ON or OFF the Status LED
+void updateStatusLed(bool ledStatus) { // turn ON or OFF the Status LED
   analogWrite(PIN_FB_LED, ledStatus * fbledBrightness);
-  //  DEBUGln("updateFBLed(): " + String(ledStatus));
+  //  DEBUGln("updateStatusLed(): " + String(ledStatus));
 }
 
 void updatePWMLed(bool ledStatus) { // turn ON or OFF the Status LED
@@ -358,9 +381,9 @@ void updatePWMLed(bool ledStatus) { // turn ON or OFF the Status LED
 void flashStatusLed(byte times) { //flash n times
   DEBUGln("flashStatusLed()");
   for (int i = 0; i < times; i++) {
-    updateFBLed(true);
+    updateStatusLed(true);
     delay(100);
-    updateFBLed(false);
+    updateStatusLed(false);
     delay(200);
   }
 }
