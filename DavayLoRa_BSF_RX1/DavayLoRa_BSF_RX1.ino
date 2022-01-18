@@ -41,7 +41,7 @@
       при разомкнутом переключателе - прибор включен
   - Батарею LiPo 1S подключить или припаять к своему JST разъёму
 
-    USB порт можно использовать для зарядки батареи - в любое время 
+    USB порт можно использовать для зарядки батареи - в любое время
       и для заливки прошивки (при разомкнутом переключателе)
 */
 
@@ -173,8 +173,8 @@ void setup() {//=======================SETUP===============================
   pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
   pinMode(PIN_SIGNAL_LED, OUTPUT);
   analogWrite(PIN_SIGNAL_LED, 0); //just in case - switch off FB on big led
+  digitalWrite(PIN_SIGNAL_BUZZERS, 0);
   digitalWrite(PIN_BATTERY_LED, 0);
-  digitalWrite(PD5, HIGH);  //где-то видел, что этот пин надо поставить в Хай для измерения батареи...
   delay(300);
 
   //Приветственный сигнал 1 сек
