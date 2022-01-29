@@ -83,8 +83,8 @@ long minFQ = round(MIN_FQ / 1.0E5) * 1.0E5;
 
 //МЕНЯТЬ - напряжение «отсечки» - по результатам использования
 #define BATTERY_MIN_VOLTAGE 3.5   //Volt min.
-#define BATTERY_VOLTAGE_1 3.5 // Мигание 1 раз
-#define BATTERY_VOLTAGE_2 3.6
+#define BATTERY_VOLTAGE_1 3.6 // Мигание 1 раз
+#define BATTERY_VOLTAGE_2 3.7
 #define BATTERY_VOLTAGE_3 3.8
 #define BATTERY_VOLTAGE_4 3.9
 #define BATTERY_VOLTAGE_5 4.0
@@ -113,13 +113,13 @@ long minFQ = round(MIN_FQ / 1.0E5) * 1.0E5;
   а также коэффициент делителя поставить равным 2:
   float batteryVoltageMultiplier = 2;
 */
-#define PIN_BATTERY 9  // Номер пина Адафрута для измерения батарейки
+#define PIN_BATTERY A1  // Номер пина Адафрута для измерения батарейки
 /*Коэффициент делителя для измерения батарейки.
   Для «нормального» BSFrance поставить 1.27;
   Для Adafruit поставить 2;
   Также поставить 2 для BSFrance с неисправным измерителем напряжения:
 */
-float batteryVoltageMultiplier = 1.27;
+float batteryVoltageMultiplier = 2;
 
 //Дефолтовые значения для SPI библиотеки: 10, 9, 2. Для наших плат действуют такие:
 const int csPin = 8;          // LoRa radio chip select
@@ -142,9 +142,9 @@ const int irqPin = 7;         // change for your board; must be a hardware inter
 #define CMD_PING_OK     213 //то же что предыдущее
 
 //МЕНЯТЬ синхронно для TX и RX в диапазоне 0-254
-#define MY_ADDRESS      78
+#define WORK_ADDRESS      1
 
-byte workAddress = MY_ADDRESS;  // address of connection
+byte workAddress = WORK_ADDRESS;  // address of connection
 byte msgNumber = 0;                    // = number of the received message: reply always this number
 byte rcvAddress = 0;          // received address
 byte rcvCount = 0;            // received Number
@@ -164,7 +164,7 @@ long lastFrequencyError;
 
 unsigned long pingTimeOutLastTime;
 
-int pwmledBrightness = 20;           // 0 - 255 - Яркость большого леда
+int pwmledBrightness = 35;           // 0 - 255 - Яркость большого леда
 
 //МЕНЯТЬ ? Cutoff settings:
 unsigned long cutoffTimer = 0;
@@ -245,7 +245,7 @@ void loop() { //  ===!!!===!!!===!!!===LOOP===!!!===!!!===!!!===!!!===!!!===
   if (rcvCmd)
     processCommand();
   else
-    processTimeOut();  //see if we haven't received from TX
+    processTimeOut();  //see if we haven't received from TX for long enough
   processCutoff();
   EVERY_MS(BATTERY_PERIOD) {
     processBattery();
@@ -373,6 +373,12 @@ void onReceive(int packetSize) {
 
   // read packet header bytes:
   rcvAddress = LoRa.read();          // received address
+
+  if (rcvAddress != workAddress) {
+    DEBUGln("\tWrong Address: " + String(rcvAddress) + " - " +  String(workAddress));
+    return;
+  }
+
   rcvCount = LoRa.read();            // received Number
   rcvCmd = LoRa.read();              // received command
   rcvData = LoRa.read();                  // received data
@@ -384,10 +390,6 @@ void onReceive(int packetSize) {
   lastFrequencyError = LoRa.packetFrequencyError();
 #endif
 
-  if (rcvAddress != workAddress) {
-    DEBUGln("\tWrong Address: " + String(rcvAddress) + " - " +  String(workAddress));
-    return;
-  }
 
   msgNumber = rcvCount;
 
@@ -418,9 +420,9 @@ void showBatteryVoltage() {
 
 void flashBatteryLEDOnce() {
   digitalWrite(PIN_BATTERY_LED, 1);
-  delay(200);
+  delay(250);
   digitalWrite(PIN_BATTERY_LED, 0);
-  delay(200);
+  delay(250);
 }
 
 float batteryVoltage() {

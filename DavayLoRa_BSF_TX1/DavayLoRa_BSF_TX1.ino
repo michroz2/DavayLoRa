@@ -110,13 +110,13 @@
 а также коэффициент делителя поставить равным 2:
 float batteryVoltageMultiplier = 2;
 */
-#define PIN_BATTERY 9  // Номер пина Адафрута для измерения батарейки
+#define PIN_BATTERY A1  // Номер пина Адафрута для измерения батарейки
 /*Коэффициент делителя для измерения батарейки.
 Для «нормального» BSFrance поставить 1.27; 
 Для Adafruit поставить 2;
 Также поставить 2 для BSFrance с неисправным измерителем напряжения: 
 */
-float batteryVoltageMultiplier = 1.27;
+float batteryVoltageMultiplier = 2;
 
 //Дефолтовые для SPI библиотеки: 10, 9, 2, но для данных модулей используются другие:
 const int csPin = 8;          // LoRa radio chip select
@@ -139,7 +139,7 @@ const int irqPin = 7;         // change for your board; must be a hardware inter
 #define CMD_PING_OK     213 //то же что предыдущее
 
 //МЕНЯТЬ синхронно для TX и RX в диапазоне 0-254
-#define WORK_ADDRESS      78
+#define WORK_ADDRESS      1
 
 byte workAddress = WORK_ADDRESS;  // address of connection
 byte msgCount = 0;                    // = number of outgoing message
@@ -171,7 +171,7 @@ unsigned long pingFlashTimer;
 bool pingFlash;
 
 int fbledBrightness = 255;           // 0 - 255 - Яркость леда в кнопке
-int pwmledBrightness = 15;           // 0 - 30 - Яркость большого леда (больше 30 - слишком ярко! и много потребляет )
+int pwmledBrightness = 35;           // 0 - 30 - Яркость большого леда (больше 30 - слишком ярко! и много потребляет )
 
 
 void setup() {//=======================SETUP===============================
