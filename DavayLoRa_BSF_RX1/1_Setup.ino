@@ -24,7 +24,7 @@ void setup() {//=======================SETUP===============================
   //Приветственный сигнал 1 сек
   updateStatusLed(true);
   analogWrite(PIN_SIGNAL_LED, BIG_LED_BRIGHTNESS);
-  digitalWrite(PIN_SIGNAL_BUZZERS, HIGH);
+  analogWrite(PIN_SIGNAL_BUZZERS, BUZZER_BIPPER_VOLUME);
   delay(1000);
   updateStatusLed(false);
   analogWrite(PIN_SIGNAL_LED, 0);

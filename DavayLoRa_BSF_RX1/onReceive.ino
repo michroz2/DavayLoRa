@@ -2,8 +2,8 @@ void onReceive(int packetSize) {
   DEBUGln(F("\n<<<Package Received!"));
   rcvAddress = LoRa.read();          // replied address
   if ((rcvAddress != workAddress) || (packetSize != 3)) {
-    DEBUGln("Invalid package!");
-    //    + String(rcvAddress) + F(", Expected: ") + String(workAddress));
+    DEBUGln("Invalid package! "  \
+        + String(rcvAddress) + F(", Expected: ") + String(workAddress));
     return;
   }
 
