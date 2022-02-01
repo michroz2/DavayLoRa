@@ -5,14 +5,14 @@ void onReceive(int packetSize) {
   if ((rcvAddress != workAddress) || (packetSize != 3)) {
     DEBUGln("Invalid package!");
     //    + String(rcvAddress) + F(", Expected: ") + String(workAddress));
-    delay(30); //пропускаем немного времени - пока работает чужое радио
+//    delay(30); //пропускаем немного времени - пока работает чужое радио
     return;
   }
 
   rcvCmd = LoRa.read();    // replied command
   if (rcvCmd != cmdExpected) {
     DEBUGln("\tInvalid Reply: " + String(rcvCmd) + F(", Expected: ") + String(cmdExpected));
-    delay(30); //пропускаем немного времени - пока работает чужое радио
+//    delay(30); //пропускаем немного времени - пока работает чужое радио
     return;
   }
   rcvData = LoRa.read();
@@ -34,7 +34,7 @@ void onReceive(int packetSize) {
 
   workFrequency = workFrequency - lastFrequencyError / 2;
   LoRa.setFrequency(workFrequency);
-  delay(30);
+//  delay(30);
 
   DEBUGln(("\tWorking Frequency NEW:\t") + String(workFrequency));
   DEBUGln("=== updateFrequency() done ===");

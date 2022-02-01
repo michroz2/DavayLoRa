@@ -166,14 +166,20 @@ void processButton() {
     DEBUGln("\nprocessButton(): " + String(currButtonState));
     prevButtonState = currButtonState;
     // send Button state
-    if (commSession( CMD_SIGNAL, currButtonState, CMD_SIGNAL_OK, \
-                     6 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
-      updateStatusLed(currButtonState);
-      updateBIGLed(currButtonState);
-    }
-    else {
+    if (currButtonState) //only if the button turns ON
+      if (commSession( CMD_SIGNAL, currButtonState, CMD_SIGNAL_OK, \
+                       5 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
+        updateStatusLed(currButtonState);
+        updateBIGLed(currButtonState);
+      }
+      else {
+        updateBIGLed(false);
+        flashStatusLed(2);
+      }
+    else { //if the button turns OFF
+      sendMessage(CMD_SIGNAL, false);
+      updateStatusLed(false);
       updateBIGLed(false);
-      flashStatusLed(2);
     }
     wasReceived = false; //мы отработали сессию и больше ничего не ждём.
   }
@@ -192,8 +198,8 @@ void   processPing() {
   }
   if ((millis() - pingTimer) > PING_TIMEOUT) { // long time was no command - initiate ping
     DEBUGln(F("\nStart Ping"));
-    if (commSession( CMD_PING, currButtonState, CMD_PING_OK,\
-                    6 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
+    if (commSession( CMD_PING, currButtonState, CMD_PING_OK, \
+                     5 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
       DEBUGln(F("\tPing LED ON"));
       updateStatusLed(!currButtonState);
       pingFlash = true;

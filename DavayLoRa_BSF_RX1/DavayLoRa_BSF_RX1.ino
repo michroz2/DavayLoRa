@@ -83,8 +83,8 @@
 #define BATTERY_VOLTAGE_4 3.9
 #define BATTERY_VOLTAGE_5 4.0
 
-//МЕНЯТЬ - надо, чтобы пинг-таймаут приёмника был больше, чем у передатчика, 
-//например: 3сек-5сек 
+//МЕНЯТЬ - надо, чтобы пинг-таймаут приёмника был больше, чем у передатчика,
+//например: 3сек-5сек
 #define PING_TIMEOUT 5000  //ms 
 
 #define BATTERY_PERIOD 300000 //(5 минут) Каждые столько миллисекунд измеряется напряжение батареи 
@@ -171,8 +171,10 @@ void processCommand() {
       DEBUGln(F("=== CMD_SIGNAL ==="));
       signalStatus = rcvData;
       processSignal();
-      sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus);
-      break;
+      if (signalStatus) {
+        sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus);
+        break;
+      }
     case CMD_PING:
       updateStatusLed(true);
       DEBUGln(F("=== CMD_PING ==="));

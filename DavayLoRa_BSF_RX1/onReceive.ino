@@ -4,7 +4,6 @@ void onReceive(int packetSize) {
   if ((rcvAddress != workAddress) || (packetSize != 3)) {
     DEBUGln("Invalid package!");
     //    + String(rcvAddress) + F(", Expected: ") + String(workAddress));
-    delay(30);
     return;
   }
 
@@ -14,7 +13,7 @@ void onReceive(int packetSize) {
   lastFrequencyError = LoRa.packetFrequencyError();
   workFrequency = workFrequency - lastFrequencyError / 2;
   LoRa.setFrequency(workFrequency);
-  delay(30);
+//  delay(30);
 
 #ifdef DEBUG_ENABLE  //только имеет смысл для дебагинга
   lastRSSI =  LoRa.packetRssi();
