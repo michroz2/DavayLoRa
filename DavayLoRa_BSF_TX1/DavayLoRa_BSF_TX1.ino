@@ -236,3 +236,27 @@ bool commSession( byte msgCmd, byte sndData, byte expectedReply, unsigned long w
   return wasReceived;
 
 }//commSession(...)
+
+unsigned long workingFrequency[20] =
+{
+43400E4,
+43412E4,
+43424E4,
+43382E4,
+43370E4,
+43394E4,
+43403E4,
+43415E4,
+43427E4,
+43385E4,
+43373E4,
+43397E4,
+43406E4,
+43418E4,
+43388E4,
+43376E4,
+43409E4,
+43421E4,
+43391E4,
+43379E4,
+};
