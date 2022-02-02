@@ -28,7 +28,7 @@
 
 //МЕНЯТЬ -
 #define BATTERY_PERIOD 300000 //(5 минут) 
-//Каждые столько миллисекунд измеряется напряжение батареи 
+//Каждые столько миллисекунд измеряется напряжение батареи
 
 //МЕНЯТЬ:
 /*ПРОБЛЕМА: У некоторых модулей BSFrance не работает встроенный измеритель напряжения
@@ -43,7 +43,7 @@
   #define PIN_BATTERY 9 - для штатного измерителя батарейки
 */
 #define PIN_BATTERY A1  // Номер пина Адафрута, куда припаяны резисторы
-                        //для измерения батарейки
+//для измерения батарейки
 
 /*Коэффициент делителя для измерения батарейки.
   Поставить 2 для исправленного BSFrance «с резисторами»:
@@ -82,6 +82,8 @@
   if (flg) tmr = millis();\
   if (flg)
 //===========================
+
+#define MAX_ADDRESS 20 //пока сделано такое максимальное количество частот
 
 #define PIN_SIGNAL_LED  6  // Номер пина для вывода сигнала для ЛЕДа
 #define PIN_SIGNAL_BUZZERS  5  // Номер пина для вывода сигнала для Баззера и Вибро
@@ -134,10 +136,9 @@ void processCommand() {
       DEBUGln(F("=== CMD_SIGNAL ==="));
       signalStatus = rcvData;
       processSignal();
-      if (signalStatus) {
+      if (signalStatus)
         sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus);
-        break;
-      }
+      break;
     case CMD_PING:
       updateStatusLed(true);
       DEBUGln(F("=== CMD_PING ==="));
@@ -219,26 +220,26 @@ void sendMessage(byte msgAddr, byte msgCmd, byte msgData) {
 //  LoRa.receive();                     // go back into receive mode
 //}
 
-unsigned long workingFrequency[20] =
+unsigned long workingFrequency[MAX_ADDRESS] =
 {
-43400E4,
-43412E4,
-43424E4,
-43382E4,
-43370E4,
-43394E4,
-43403E4,
-43415E4,
-43427E4,
-43385E4,
-43373E4,
-43397E4,
-43406E4,
-43418E4,
-43388E4,
-43376E4,
-43409E4,
-43421E4,
-43391E4,
-43379E4,
+  43400E4,
+  43412E4,
+  43424E4,
+  43382E4,
+  43370E4,
+  43394E4,
+  43403E4,
+  43415E4,
+  43427E4,
+  43385E4,
+  43373E4,
+  43397E4,
+  43406E4,
+  43418E4,
+  43388E4,
+  43376E4,
+  43409E4,
+  43421E4,
+  43391E4,
+  43379E4,
 };

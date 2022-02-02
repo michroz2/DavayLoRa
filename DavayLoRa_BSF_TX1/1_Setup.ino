@@ -47,7 +47,10 @@ void setup() {//=======================SETUP===============================
   LoRa.setPins(csPin, resetPin, irqPin);  // set CS, reset, IRQ pin
   delay(300);
 
-  if (!LoRa.begin(workingFrequency[WORK_ADDRESS])) {             // initialize radio at workFrequency
+  workFrequency = workingFrequency[WORK_ADDRESS % MAX_ADDRESS];
+  DEBUG("LoRa begin on ");
+  DEBUGln(workFrequency);
+  if (!LoRa.begin(workFrequency)) {             // initialize radio at workFrequency
     DEBUGln("LoRa init failed. Check your connections.");
     while (true) {
       flashStatusLed(6);    // if failed, do nothing
@@ -65,6 +68,6 @@ void setup() {//=======================SETUP===============================
   LoRa.idle();              //Until we decide how to continue
   delay(100);
 
-  DEBUGln("DavayLoRa TX setup complete");
+  DEBUGln("DavayLoRa TX setup complete, waiting for 1-st buttonpress");
 
 }//setup      //======================= /SETUP ===============================

@@ -1,9 +1,16 @@
 void onReceive(int packetSize) {
-  DEBUGln(F("\n<<<Package Received!"));
+  DEBUGln(F("\n<<<Package Received"));
+
   rcvAddress = LoRa.read();          // replied address
   if ((rcvAddress != workAddress) || (packetSize != 3)) {
-    DEBUGln("Invalid package! "  \
-        + String(rcvAddress) + F(", Expected: ") + String(workAddress));
+    DEBUGln(F("Invalid package! "));
+    DEBUG(F("Received address: "));
+    DEBUGln(rcvAddress);
+    DEBUG(F("Expected address: "));
+    DEBUGln(workAddress);
+    DEBUG(F("Package length: "));
+    DEBUGln(packetSize);
+    //    delay(30); //пропускаем немного времени - пока работает чужое радио
     return;
   }
 
@@ -11,21 +18,24 @@ void onReceive(int packetSize) {
   rcvData = LoRa.read();                  // received data
 
   lastFrequencyError = LoRa.packetFrequencyError();
-  workFrequency = workFrequency - lastFrequencyError / 2;
-  LoRa.setFrequency(workFrequency);
-//  delay(30);
 
-#ifdef DEBUG_ENABLE  //только имеет смысл для дебагинга
+#ifdef DEBUG_ENABLE
   lastRSSI =  LoRa.packetRssi();
   lastSNR = LoRa.packetSnr();
-  lastTurnaround = millis() - lastSendTime;
-  DEBUGln("\tRSSI:\t" + String(lastRSSI));
-  DEBUGln("\tSnr:\t" + String(lastSNR));
-  DEBUGln("\tTurnaround:\t" + String(lastTurnaround));
-  DEBUGln("\tFrequency Error:\t" + String(lastFrequencyError));
   DEBUGln("\tReceived Message:\t"  + String(rcvAddress)\
           +" " + String( rcvCmd) + " " + String( rcvData));
+  DEBUGln("\tRSSI:\t" + String(lastRSSI));
+  DEBUGln("\tSnr:\t" + String(lastSNR));
+  DEBUGln("\tFrequency Error:\t" + String(lastFrequencyError));
+  DEBUGln(("\tWorking Frequency OLD:\t") + String(workFrequency));
 #endif
+
+  workFrequency = workFrequency - lastFrequencyError / 2;
+  LoRa.setFrequency(workFrequency);
+  //  delay(30);
+
+  DEBUGln(("\tWorking Frequency NEW:\t") + String(workFrequency));
+  DEBUGln(F("=== onReceive done ==="));
 
 
 }//void onReceive(int packetSize)

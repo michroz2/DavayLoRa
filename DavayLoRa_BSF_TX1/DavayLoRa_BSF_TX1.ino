@@ -64,6 +64,8 @@
   if (flg)
 //===========================
 
+#define MAX_ADDRESS 20 //пока сделано такое максимальное количество частот
+
 #define DEFAULT_TURNAROUND 300    //начальный таймаут для отзыва приёмника (мс)
 #define WORK_COMM_ATTEMPTS 4
 #define PING_FLASH 100  //ms
@@ -237,7 +239,7 @@ bool commSession( byte msgCmd, byte sndData, byte expectedReply, unsigned long w
 
 }//commSession(...)
 
-unsigned long workingFrequency[20] =
+unsigned long workingFrequency[MAX_ADDRESS] =
 {
 43400E4,
 43412E4,

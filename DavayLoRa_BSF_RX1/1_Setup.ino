@@ -43,7 +43,10 @@ void setup() {//=======================SETUP===============================
   LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
   delay(300);
 
-  if (!LoRa.begin(workingFrequency[WORK_ADDRESS])) {             // initialize radio
+  workFrequency = workingFrequency[WORK_ADDRESS % MAX_ADDRESS];
+  DEBUG("LoRa begin on ");
+  DEBUGln(workFrequency);
+  if (!LoRa.begin(workFrequency)) {             // initialize radio at workFrequency
     DEBUGln(F("LoRa init failed. Check your connections."));
     while (true) {
       flashStatusLed(6);    // if LoRa failed, blink and do nothing
