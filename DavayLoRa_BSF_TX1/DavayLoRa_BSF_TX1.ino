@@ -67,7 +67,7 @@
 #define MAX_ADDRESS 20 //пока сделано такое максимальное количество частот
 
 #define DEFAULT_TURNAROUND 300    //начальный таймаут для отзыва приёмника (мс)
-#define WORK_COMM_ATTEMPTS 4
+#define WORK_COMM_ATTEMPTS 3
 #define PING_FLASH 100  //ms
 #define BATTERY_PERIOD  300000 //(5 минут) Каждые столько миллисекунд измеряется напряжение батареи 
 
@@ -131,7 +131,7 @@ void processButton() {
     // send Button state
     if (currButtonState) {//only if the button turns ON
       if (commSession( CMD_SIGNAL, 1, CMD_SIGNAL_OK, \
-                       4 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
+                       2 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
         updateStatusLed(true);
         updateBIGLed(true);
       }
