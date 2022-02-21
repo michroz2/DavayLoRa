@@ -160,6 +160,7 @@ void  processSignal() {
   cutoffTimer = millis();
   analogWrite(PIN_SIGNAL_LED, signalStatus * BIG_LED_BRIGHTNESS);
   analogWrite(PIN_SIGNAL_BUZZERS, signalStatus * BUZZER_BIPPER_VOLUME);
+  digitalWrite(PIN_STATUS_LED, signalStatus);
 }
 
 void processCutoff() {

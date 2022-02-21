@@ -16,10 +16,10 @@ void setup() {//=======================SETUP===============================
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   pinMode(PIN_FB_LED, OUTPUT);
   pinMode(PIN_BIG_LED, OUTPUT);
+  pinMode(PIN_BATTERY_LED, OUTPUT);
   digitalWrite(PIN_FB_LED, 0); //switch off FB on status led
   digitalWrite(PIN_BIG_LED, 0); //switch off big monitoring led
   digitalWrite(PIN_BATTERY_LED, 0); //switch off battery indicating led (built-in normally)
-  digitalWrite(PIN_BATTERY_LED, 0);
   //  digitalWrite(PD5, HIGH);
   delay(300);
 
@@ -63,7 +63,7 @@ void setup() {//=======================SETUP===============================
   LoRa.onReceive(onReceive);
   delay(100);
 
-  LoRa.onTxDone(onTxDone);
+//  LoRa.onTxDone(onTxDone);
 
   LoRa.idle();              //Until we decide how to continue
   delay(100);

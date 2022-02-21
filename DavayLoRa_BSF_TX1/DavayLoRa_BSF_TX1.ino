@@ -28,7 +28,7 @@
 
 //МЕНЯТЬ - (если надо) - время стэнд-бай передатчика со включенным пингом
 #define BIG_TIMEOUT    3600000 //Через час «холостой» работы 
-                                //передатчик прекращает пинг
+//передатчик прекращает пинг
 
 //МЕНЯТЬ:
 #define PIN_BATTERY A1  // Номер пина для измерения батарейки
@@ -120,29 +120,32 @@ int fbledBrightness = FB_LED_BRIGHTNESS;           // 0 - 255 - Яркость �
 int pwmledBrightness = BIG_LED_BRIGHTNESS;           // 0 - 30 - Яркость большого леда (больше 30 - слишком ярко! и много потребляет )
 
 void processButton() {
+  prevButtonState = currButtonState;
   currButtonState = !digitalRead(PIN_BUTTON); // Читаем состояние кнопки 1=нажата; 0=отпущена
   if (prevButtonState != currButtonState) {   //button pressed or released
     lastButtonTime = millis();
+    pingTimer = millis(); //refresh the ping timer on button action
     buttonPressedFirstTime = true;
     DEBUGln("\nprocessButton(): " + String(currButtonState));
     prevButtonState = currButtonState;
     // send Button state
-    if (currButtonState) //only if the button turns ON
-      if (commSession( CMD_SIGNAL, currButtonState, CMD_SIGNAL_OK, \
-                       5 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
-        updateStatusLed(currButtonState);
-        updateBIGLed(currButtonState);
+    if (currButtonState) {//only if the button turns ON
+      if (commSession( CMD_SIGNAL, 1, CMD_SIGNAL_OK, \
+                       4 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
+        updateStatusLed(true);
+        updateBIGLed(true);
       }
       else {
         updateBIGLed(false);
         flashStatusLed(2);
       }
+    }
     else { //if the button turns OFF
-      sendMessage(CMD_SIGNAL, false);
+      sendMessage(CMD_SIGNAL, false); //short version of communication, w/o feedback
       updateStatusLed(false);
       updateBIGLed(false);
     }
-    wasReceived = false; //мы отработали сессию и больше ничего не ждём.
+    //    wasReceived = false; //мы отработали сессию и больше ничего не ждём.
   }
 }//////bool   processButton()
 
@@ -155,9 +158,8 @@ void   processPing() {
       pingFlash = false;
       updateStatusLed(currButtonState);
     }
-    return;  //??
   }
-  if ((millis() - pingTimer) > PING_TIMEOUT) { // long time was no command - initiate ping
+  else if ((millis() - pingTimer) > PING_TIMEOUT) { // long time was no command - initiate ping
     DEBUGln(F("\nStart Ping"));
     if (commSession( CMD_PING, currButtonState, CMD_PING_OK, \
                      5 * lastTurnaround, WORK_COMM_ATTEMPTS )) {
@@ -165,13 +167,13 @@ void   processPing() {
       updateStatusLed(!currButtonState);
       pingFlash = true;
       pingFlashTimer = millis();
+      pingTimer = millis();
     }
     else {
-      //      updateStatusLed(false);
       flashStatusLed(2);
     }
   }
-  if ((millis() - lastButtonTime) > BIG_TIMEOUT) { // 1 hour no button avtivity
+  if ((millis() - lastButtonTime) > BIG_TIMEOUT) { // 1 hour no button activity
     flashStatusLed(3);  //flash 3 times and
     buttonPressedFirstTime = false; //return to the state like after switch-on
     // - no more pings until the next buttonpress
@@ -210,24 +212,24 @@ void sendMessage(byte msgCmd, byte sndData) {
   while (!LoRa.endPacket()) {            // finish packet and send it
     DEBUGln(("\tWaiting to finish TX"));
   }
-  //  LoRa.receive();                     // go back into receive mode
+  LoRa.receive();                     // go back into receive mode
   lastSendTime = millis();            // timestamp the message
   DEBUGln(("\tMessage sent: ") + String(workAddress)\
           + " " + String(msgCmd) + " " + String(sndData));
-  LoRa.receive();                     // go back into receive mode
 
 }// void sendMessage(byte messageByte)
 
-void onTxDone() {
-  DEBUGln("onTxDone()");
-  lastSendTime = millis();            // timestamp the message
-  LoRa.receive();                     // go back into receive mode
-}
+//void onTxDone() {
+//  DEBUGln("onTxDone()");
+//  lastSendTime = millis();            // timestamp the message
+//  LoRa.receive();                     // go back into receive mode
+//}
 
 bool commSession( byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes ) {
   DEBUGln(F("commSession()"));
   wasReceived = false;
   cmdExpected = expectedReply;
+  pingTimer = millis(); //refresh the ping timer after every communication
   do {
     EVERY_MS(waitMilliseconds) {
       sendMessage(msgCmd, sndData);
@@ -241,24 +243,24 @@ bool commSession( byte msgCmd, byte sndData, byte expectedReply, unsigned long w
 
 unsigned long workingFrequency[MAX_ADDRESS] =
 {
-43400E4,
-43412E4,
-43424E4,
-43382E4,
-43370E4,
-43394E4,
-43403E4,
-43415E4,
-43427E4,
-43385E4,
-43373E4,
-43397E4,
-43406E4,
-43418E4,
-43388E4,
-43376E4,
-43409E4,
-43421E4,
-43391E4,
-43379E4,
+  43400E4,
+  43412E4,
+  43424E4,
+  43382E4,
+  43370E4,
+  43394E4,
+  43403E4,
+  43415E4,
+  43427E4,
+  43385E4,
+  43373E4,
+  43397E4,
+  43406E4,
+  43418E4,
+  43388E4,
+  43376E4,
+  43409E4,
+  43421E4,
+  43391E4,
+  43379E4,
 };
