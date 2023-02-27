@@ -2,7 +2,7 @@ void setup() {//=======================SETUP===============================
   delay(2000);   // Give time to the ATMega32u4 port to wake up and be recognized by the OS.
   power.hardwareEnable(PWR_ALL); //На всякий случай включим все системы микропроцессора
 
-  // initialize serial
+  // initialize serial for debug output if needed
 #ifdef DEBUG_ENABLE
   Serial.begin(9600);
   while (!Serial);
@@ -43,7 +43,7 @@ void setup() {//=======================SETUP===============================
   showBatteryVoltage();
   delay(2000);   //
 
-  // override the library default CS, reset, and IRQ pins
+  // override the LoRa library default CS, reset, and IRQ pins with the board values
   LoRa.setPins(csPin, resetPin, irqPin);  // set CS, reset, IRQ pin
   delay(300);
 

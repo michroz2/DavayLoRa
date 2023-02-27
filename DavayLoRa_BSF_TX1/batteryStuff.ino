@@ -26,7 +26,7 @@ void flashBatteryLEDOnce() {
   delay(250);
 }
 
-void flashLedBattery(byte times) { //flash 3 times total 1.5 sec
+void flashLedBattery(byte times) { //flash times times
   DEBUGln("flashLedBattery()");
   bool flash = false;
   for (int i = 0; i < times * 2; i++) {
