@@ -25,6 +25,13 @@ void showBatteryVoltage() {
   if (voltage > BATTERY_VOLTAGE_5)   flashBatteryLEDOnce(); //5 раз
 }
 
+void showNoBattery() { //long flash if no battery measurement
+  digitalWrite(PIN_BATTERY_LED, 1);
+  delay(2000);
+  digitalWrite(PIN_BATTERY_LED, 0);
+  delay(250);
+}
+
 void flashBatteryLEDOnce() {
   digitalWrite(PIN_BATTERY_LED, 1);
   delay(250);
@@ -34,10 +41,8 @@ void flashBatteryLEDOnce() {
 
 void flashLedBattery(byte times) { //flash "times" times
   DEBUGln(F("flashLedBattery()"));
-  bool flash = true;
   for (int i = 0; i < times * 2; i++) {
-    digitalWrite(PIN_BATTERY_LED, flash);
-    flash = !flash;
-    delay(200);
+    flashBatteryLEDOnce();
   }
+  delay(200);
 }

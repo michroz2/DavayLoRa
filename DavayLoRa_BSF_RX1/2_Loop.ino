@@ -8,7 +8,9 @@ void loop() { //  ===!!!===!!!===!!!===LOOP===!!!===!!!===!!!===!!!===!!!===
   processCutoff();
 
   EVERY_MS(BATTERY_PERIOD) {
-    processBattery();
+    if (measurebattery) {
+      processBattery();
+    }
   }
 
 }//loop()         ===!!!===!!!===!!!===END LOOP===!!!===!!!===!!!===!!!===!!!===

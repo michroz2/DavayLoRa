@@ -31,13 +31,21 @@ void setup() {//=======================SETUP===============================
   digitalWrite(PIN_SIGNAL_BUZZERS, LOW);
   delay(1000);
 
-  DEBUGln("Battery Test");
-  processBattery(); //Если заряд батарейки недостаточен, то моргаем 7 раз (если можем!) и выключаемся
-  // два раза показываем заряд батарейки:
-  showBatteryVoltage();
-  delay(2000);   //
-  showBatteryVoltage();
-  delay(2000);   //
+  DEBUGln(F("Battery Test"));
+  if (measurebattery) {
+  DEBUGln(F("-Measuring"));
+    processBattery(); //Если заряд батарейки недостаточен, то моргаем 2 серии по 7 раз и выключаемся
+    // два раза показываем заряд батарейки:
+    showBatteryVoltage();
+    delay(2000);   //
+    showBatteryVoltage();
+    delay(500);   //
+  }
+  else {
+    DEBUGln(F("-Cancelled"));
+    showNoBattery();
+    delay(500);   //
+  }
 
   // override the default CS, reset, and IRQ pins (optional)
   LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
