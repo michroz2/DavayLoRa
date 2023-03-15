@@ -41,7 +41,7 @@ void flashBatteryLEDOnce() {
 
 void flashLedBattery(byte times) { //flash "times" times
   DEBUGln(F("flashLedBattery()"));
-  for (int i = 0; i < times * 2; i++) {
+  for (int i = 0; i < times; i++) {
     flashBatteryLEDOnce();
   }
   delay(200);

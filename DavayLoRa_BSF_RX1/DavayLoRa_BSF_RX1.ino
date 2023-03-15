@@ -24,7 +24,7 @@
 #define PING_TIMEOUT 5000  //ms 
 
 //МЕНЯТЬ: Далее идёт батарейный раздел:
-#define MEASURE_BATTERY false  // true или false = включить или выключить измерение батарейки 
+#define MEASURE_BATTERY true  // true или false = включить или выключить измерение батарейки 
 
 //МЕНЯТЬ - напряжение «отсечки» - по результатам использования
 #define BATTERY_MIN_VOLTAGE 3.5   //Volt min.
@@ -42,7 +42,7 @@
 /*ПРОБЛЕМА: У некоторых модулей BSFrance не работает встроенный измеритель напряжения
   (для определения чего следует воспользоватьс программой BSFTest.ino со включенным монитором).
   После сортировки для приёмников стараться использовать только РАБОТАЮЩИЕ платы!
- Нормальный номер пина для измерения батарейки - 9; для резисторов - A1
+  Нормальный номер пина для измерения батарейки - 9; для резисторов - A1
 */
 #define PIN_BATTERY 9  //МЕНЯТЬ: без резисторов - 9, с резисторами - A1
 
@@ -139,17 +139,17 @@ void processCommand() {
         sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus);
       break;
     case CMD_PING:
-      updateStatusLed(true);
+      unsigned long flashStatus = millis();
       DEBUGln(F("=== CMD_PING ==="));
       signalStatus = rcvData;
       processSignal();
-      //      unsigned long flashStatus = millis();
-      sendMessage(rcvAddress, CMD_PING_OK, signalStatus);
-      //      unsigned long restDelay = 100 - (millis() - flashStatus);
-      //      if (restDelay > 0) {
-      //        delay(restDelay);
-      //      }
+      updateStatusLed(true);
+      unsigned long restDelay = 150 - (millis() - flashStatus);
+      if (restDelay > 0) {
+        delay(restDelay);
+      }
       updateStatusLed(false);
+      sendMessage(rcvAddress, CMD_PING_OK, signalStatus);
   }
   rcvCmd = 0;
 } //void processCommand()
@@ -159,7 +159,7 @@ void  processSignal() {
   cutoffTimer = millis();
   analogWrite(PIN_SIGNAL_LED, signalStatus * BIG_LED_BRIGHTNESS);
   analogWrite(PIN_SIGNAL_BUZZERS, signalStatus * BUZZER_BIPPER_VOLUME);
-  digitalWrite(PIN_STATUS_LED, signalStatus);
+  digitalWrite(PIN_STATUS_LED, signalStatus); //In case all DIPs are out, at least the status LED blinks!
 }
 
 void processCutoff() {
@@ -167,6 +167,7 @@ void processCutoff() {
     signalStatus = 0;
     analogWrite(PIN_SIGNAL_LED, 0);
     digitalWrite(PIN_SIGNAL_BUZZERS, 0);
+    digitalWrite(PIN_STATUS_LED, 0);
   }
 }
 
@@ -175,15 +176,19 @@ void updateStatusLed(bool ledStatus) { // turn ON or OFF the status LED
   //  DEBUGln("updateStatusLed: " + String(ledStatus));
 }// updateStatusLed(bool ledStatus)
 
+void flashStatusLEDOnce() {
+  digitalWrite(PIN_STATUS_LED, 1);
+  delay(250);
+  digitalWrite(PIN_STATUS_LED, 0);
+  delay(250);
+}//void flashStatusLEDOnce()
+
 void flashStatusLed(byte times) { //flash "times" times
-  //  DEBUGln("flashStatusLed()");
-  bool flash = true;
-  for (int i = 0; i < times * 2; i++) {
-    updateStatusLed(flash);
-    flash = !flash;
-    delay(150);
+  for (int i = 0; i < times; i++) {
+    flashStatusLEDOnce();
   }
-}
+  delay(200);
+}//void flashStatusLed(byte times)
 
 //long frequencyByChannel(byte numChannel) {
 //  DEBUGln(F("frequencyByChannel(byte numChannel)"));

@@ -28,7 +28,7 @@ void setup() {//=======================SETUP===============================
   delay(1000);
   updateStatusLed(false);
   analogWrite(PIN_SIGNAL_LED, 0);
-  digitalWrite(PIN_SIGNAL_BUZZERS, LOW);
+  digitalWrite(PIN_SIGNAL_BUZZERS, LOW);  //LOW is the same as 0
   delay(1000);
 
   DEBUGln(F("Battery Test"));

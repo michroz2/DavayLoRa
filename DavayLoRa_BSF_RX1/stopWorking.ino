@@ -1,7 +1,7 @@
 void stopWorking() {
   flashLedBattery(7);
   digitalWrite(PIN_BATTERY_LED, 0);
-  delay(5000);
+  delay(3000);
   flashLedBattery(7);
   digitalWrite(PIN_BATTERY_LED, 0);
   while (1) {
