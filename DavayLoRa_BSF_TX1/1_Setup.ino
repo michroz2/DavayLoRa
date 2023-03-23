@@ -35,13 +35,22 @@ void setup() {//=======================SETUP===============================
   digitalWrite(PIN_BATTERY_LED, LOW);
   delay(1000);
 
-  DEBUGln("Battery Test");
-  processBattery(); //Если заряд батарейки недостаточен, то моргаем 7 раз и не работаем
-  // два раза показываем заряд батарейки:
-  showBatteryVoltage();
-  delay(2000);   //
-  showBatteryVoltage();
-  delay(2000);   //
+  DEBUGln(F("Battery Test"));
+  measurebattery = testBattery();     //This function defines if the battery can be measured
+  if (measurebattery) {
+  DEBUGln(F("-Measuring"));
+    processBattery(); //Если заряд батарейки недостаточен, то моргаем 2 серии по 7 раз и выключаемся
+    // два раза показываем заряд батарейки:
+    showBatteryVoltage();
+    delay(2000);   //
+    showBatteryVoltage();
+    delay(500);   //
+  }
+  else {
+    DEBUGln(F("-Cancelled"));
+    showNoBattery();
+    delay(500);   //
+  }
 
   // override the LoRa library default CS, reset, and IRQ pins with the board values
   LoRa.setPins(csPin, resetPin, irqPin);  // set CS, reset, IRQ pin

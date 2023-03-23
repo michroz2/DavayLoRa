@@ -21,7 +21,8 @@ void setup() {//=======================SETUP===============================
   digitalWrite(PIN_BATTERY_LED, 0);
   delay(300);
 
-  //Приветственный сигнал 1 сек
+  //Приветственный сигнал 1 сек включаем все исполнительные элементы
+  //(если они выключены ДИПами, то вспыхнет только статусный ЛЕД на плате!)
   updateStatusLed(true);
   analogWrite(PIN_SIGNAL_LED, BIG_LED_BRIGHTNESS);
   analogWrite(PIN_SIGNAL_BUZZERS, BUZZER_BIPPER_VOLUME);
@@ -32,6 +33,7 @@ void setup() {//=======================SETUP===============================
   delay(1000);
 
   DEBUGln(F("Battery Test"));
+  measurebattery = testBattery();     //This function defines if the battery can be measured
   if (measurebattery) {
   DEBUGln(F("-Measuring"));
     processBattery(); //Если заряд батарейки недостаточен, то моргаем 2 серии по 7 раз и выключаемся
@@ -57,7 +59,7 @@ void setup() {//=======================SETUP===============================
   if (!LoRa.begin(workFrequency)) {             // initialize radio at workFrequency
     DEBUGln(F("LoRa init failed. Check your connections."));
     while (true) {
-      flashStatusLed(6);    // if LoRa failed, blink and do nothing
+      flashStatusLed(6);    // if LoRa failed, blink 6 times and do nothing
       delay(4000);
     }
   }
