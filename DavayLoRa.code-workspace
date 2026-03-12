@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "DavayLoRa_BSF_RX1"
+		},
+		{
+			"path": "DavayLoRa_BSF_TX1"
+		}
+	],
+	"settings": {}
+}
