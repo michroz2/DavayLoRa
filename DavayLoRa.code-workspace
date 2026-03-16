@@ -1,10 +1,10 @@
 {
 	"folders": [
 		{
-			"path": "DavayLoRa_BSF_RX1"
+			"path": "DavayLoRa_HT_TX"
 		},
 		{
-			"path": "DavayLoRa_BSF_TX1"
+			"path": "DavayLoRa_HT_RX"
 		}
 	],
 	"settings": {}
