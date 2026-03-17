@@ -36,6 +36,7 @@
 // --- Пины измерения батареи (Спецификация WSL V3) ---
 #define PIN_BATTERY_INTERNAL 1 // Пин АЦП для замера батареи (ADC1_CH0)
 #define PIN_VEXT 36            // Пин управления питанием встроенного делителя
+#define PIN_ADC_CTRL 37        // Пин управления делителем батареи
 #define HELTEC_BATTERY_MULTIPLIER 4.9 // Аппаратный делитель (390k + 100k) / 100k = 4.9
 
 // --- Пины SPI и радиомодуля SX1262 (Внутренняя разводка WSL V3) ---
@@ -323,18 +324,18 @@ bool batteryVoltageOK(byte tries) {
 
 float batteryVoltage() {
   DEBUG(F("Battery Voltage: "));
-  
-  digitalWrite(PIN_VEXT, LOW);
+
+  digitalWrite(PIN_ADC_CTRL, LOW); // Включаем именно делитель батареи!
   delay(10); 
-  
+
   float measuredvbat = analogRead(PIN_BATTERY_INTERNAL);
-  
-  digitalWrite(PIN_VEXT, HIGH);
+
+  digitalWrite(PIN_ADC_CTRL, HIGH); // Отключаем делитель
 
   measuredvbat *= 3.3;  
   measuredvbat /= 4095.0; 
   measuredvbat *= HELTEC_BATTERY_MULTIPLIER;
-  
+
   DEBUGln(measuredvbat);
   return measuredvbat;
 }
@@ -399,7 +400,9 @@ void setup() {
   DEBUGln(F("DavayLoRa RX setup()"));
 
   pinMode(PIN_VEXT, OUTPUT);
-  digitalWrite(PIN_VEXT, HIGH); 
+  digitalWrite(PIN_VEXT, HIGH);
+  pinMode(PIN_ADC_CTRL, OUTPUT);
+  digitalWrite(PIN_ADC_CTRL, HIGH); // Выключаем делитель по умолчанию 
 
   pinMode(PIN_STATUS_LED, OUTPUT);
   pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);

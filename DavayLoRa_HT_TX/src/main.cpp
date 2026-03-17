@@ -33,6 +33,7 @@
 
 // --- Пины измерения батареи (Спецификация WSL V3) ---
 #define PIN_BATTERY_INTERNAL 1 // Пин АЦП для замера батареи (ADC1_CH0)
+#define PIN_VEXT 36            // Пин управления питанием встроенного делителя
 #define PIN_ADC_CTRL 37        // Пин управления питанием встроенного делителя
 #define HELTEC_BATTERY_MULTIPLIER 4.9 // Аппаратный делитель (390k + 100k) / 100k = 4.9
 
@@ -110,7 +111,7 @@ unsigned long pingTimer;
 unsigned long pingFlashTimer;
 bool pingFlash;
 
-int fbledBrightness = FB_LED_BRIGHTNESS;           
+//int fbledBrightness = FB_LED_BRIGHTNESS;  //Временно уберём возможность регулировать яркость кнопочного светодиода           
 int pwmledBrightness = BIG_LED_BRIGHTNESS;           
 
 volatile bool receivedFlag = false;
@@ -202,7 +203,8 @@ void processPing() {
 }
 
 void updateStatusLed(bool ledStatus) { 
-  analogWrite(PIN_FB_LED, ledStatus * fbledBrightness);
+//  analogWrite(PIN_FB_LED, ledStatus * fbledBrightness); //Временно уберём возможность регулировать яркость кнопочного светодиода
+ digitalWrite(PIN_FB_LED, ledStatus);
 }
 
 void updateBIGLed(bool ledStatus) { 
@@ -382,15 +384,16 @@ float batteryVoltage() {
   digitalWrite(PIN_ADC_CTRL, HIGH);
 
   measuredvbat *= 3.3;  
-  measuredvbat /= 4095.0; 
   measuredvbat *= HELTEC_BATTERY_MULTIPLIER;
-  // Из даташита: VBAT = 100 / (100+390) * VADC_IN1
+  measuredvbat /= 4095.0; 
+  //measuredvbat = (100 / (100+390)) * measuredvbat;
 
   DEBUGln(measuredvbat);
   return measuredvbat;
 }
 
 void showBatteryVoltage() {
+//  DEBUGln(F("showBatteryVoltage()"));
   float voltage = batteryVoltage();
   if (voltage > BATTERY_VOLTAGE_1)   flashBatteryLEDOnce(); 
   if (voltage > BATTERY_VOLTAGE_2)   flashBatteryLEDOnce(); 
@@ -407,9 +410,9 @@ void showNoBattery() {
 }
 
 void flashBatteryLEDOnce() {
-  digitalWrite(PIN_BATTERY_LED, 1);
+  digitalWrite(PIN_BATTERY_LED, 1); // 2. Зажигаем диод
   delay(250);
-  digitalWrite(PIN_BATTERY_LED, 0);
+  digitalWrite(PIN_BATTERY_LED, 0); // 3. Гасим диод
   delay(250);
 }
 
@@ -451,19 +454,18 @@ void setup() {
   DEBUGln("DavayLoRa TX setup()");
 
   // Инициализация пина управления делителем АЦП
-  pinMode(PIN_ADC_CTRL, OUTPUT);
-  digitalWrite(PIN_ADC_CTRL, HIGH); 
-
   // На всякий случай выключаем и Vext, чтобы не тратить батарею впустую
-  pinMode(36, OUTPUT);
-  digitalWrite(36, HIGH); 
+  pinMode(PIN_VEXT, OUTPUT);
+  digitalWrite(PIN_VEXT, HIGH);
+  pinMode(PIN_ADC_CTRL, OUTPUT);
+  digitalWrite(PIN_ADC_CTRL, HIGH); // Выключаем делитель по умолчанию 
 
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   pinMode(PIN_FB_LED, OUTPUT);
   pinMode(PIN_BIG_LED, OUTPUT);
   pinMode(PIN_BATTERY_LED, OUTPUT);
   digitalWrite(PIN_FB_LED, 0); 
-  digitalWrite(PIN_BIG_LED, 0); 
+  analogWrite(PIN_BIG_LED, 0); 
   digitalWrite(PIN_BATTERY_LED, 0); 
   delay(300);
 
