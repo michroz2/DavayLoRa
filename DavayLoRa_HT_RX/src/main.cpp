@@ -26,12 +26,12 @@
 //======================= ПИНЫ HELTEC WIRELESS STICK LITE V3 ========================
 
 // --- Исполнительные пины (Управление MOSFET) ---
-#define PIN_SIGNAL_LED      41  // Пин для затвора транзистора главного ЛЕДа
-#define PIN_SIGNAL_BUZZERS  42  // Пин для затвора транзистора Баззера и Вибро
+#define PIN_SIGNAL_LED      41  //14 Пин для затвора транзистора главного ЛЕДа
+#define PIN_SIGNAL_BUZZERS  42  //15 Пин для затвора транзистора Баззера и Вибро
 
 // --- Индикация (Встроенный LED платы Heltec V3) ---
-#define PIN_STATUS_LED      35  // Встроенный белый светодиод на Heltec V3
-#define PIN_BATTERY_LED     35  // Тот же пин для индикации батареи
+#define PIN_STATUS_LED      35  //8 Встроенный белый светодиод на Heltec V3
+#define PIN_BATTERY_LED     35  //8 Тот же пин для индикации батареи
 
 // --- Пины измерения батареи (Спецификация WSL V3) ---
 #define PIN_BATTERY_INTERNAL 1 // Пин АЦП для замера батареи (ADC1_CH0)
@@ -171,10 +171,10 @@ void processSignal() {
 }
 
 void processCutoff() {
-  if (millis() - cutoffTimer > CUTOFF_TIME) {
+  if (signalStatus && (millis() - cutoffTimer > CUTOFF_TIME)) {
     signalStatus = 0;
     analogWrite(PIN_SIGNAL_LED, 0);
-    digitalWrite(PIN_SIGNAL_BUZZERS, 0);
+    analogWrite(PIN_SIGNAL_BUZZERS, 0);
     digitalWrite(PIN_STATUS_LED, 0);
   }
 }
@@ -242,8 +242,8 @@ void setLoRaParams() {
   radio.setBandwidth(125.0);
   radio.setSpreadingFactor(8);
   radio.setCodingRate(5);                       
-  radio.setPreambleLength(6);
-  radio.setSyncWord(0x1400 | WORK_ADDRESS);
+  radio.setPreambleLength(8);     // ВЕРНУЛИ СТАНДАРТНУЮ ПРЕАМБУЛУ (8)
+  radio.setSyncWord(0x1424);      // ЖЕСТКО ЗАДАЛИ СТАНДАРТНОЕ СИНХРОСЛОВО Private
 }
 
 void onReceive(byte* payload, int packetSize) {
@@ -278,7 +278,7 @@ void onReceive(byte* payload, int packetSize) {
 
   // Подстройка частоты (RadioLib ожидает ввод в мегагерцах)
   workFrequency = workFrequency - (lastFrequencyError / 2.0);
-  radio.setFrequency(workFrequency / 1000000.0);
+  //radio.setFrequency(workFrequency / 1000000.0); //Закомментировано временно TODO
 
   DEBUGln(("\tWorking Frequency NEW:\t") + String(workFrequency));
   DEBUGln(F("=== onReceive done ==="));
@@ -408,7 +408,7 @@ void setup() {
   pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
   pinMode(PIN_SIGNAL_LED, OUTPUT);
   analogWrite(PIN_SIGNAL_LED, 0); 
-  digitalWrite(PIN_SIGNAL_BUZZERS, 0);
+  analogWrite(PIN_SIGNAL_BUZZERS, 0);
   digitalWrite(PIN_BATTERY_LED, 0);
   delay(300);
 
@@ -418,7 +418,7 @@ void setup() {
   delay(1000);
   updateStatusLed(false);
   analogWrite(PIN_SIGNAL_LED, 0);
-  digitalWrite(PIN_SIGNAL_BUZZERS, LOW);  
+  analogWrite(PIN_SIGNAL_BUZZERS, LOW);  
   delay(1000);
 
   DEBUGln(F("Battery Test"));

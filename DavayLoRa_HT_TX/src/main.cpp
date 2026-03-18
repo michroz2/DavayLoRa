@@ -26,9 +26,9 @@
 //======================= ПИНЫ HELTEC WIRELESS STICK LITE V3 ========================
 
 // --- Пины интерфейса (ВАМ НУЖНО ПЕРЕПОДКЛЮЧИТЬ ПРОВОДА СЮДА) ---
-#define PIN_BUTTON  41         // Безопасный GPIO на колодке J2
-#define PIN_FB_LED  35         // Безопасный GPIO на колодке J2
-#define PIN_BIG_LED 47         // Безопасный GPIO на колодке J3
+#define PIN_BUTTON  45         //16  Безопасный GPIO на колодке J2
+#define PIN_FB_LED  35         //8 Безопасный GPIO на колодке J2
+#define PIN_BIG_LED 41         //14 Безопасный GPIO на колодке J2
 #define PIN_BATTERY_LED 35     // Тот же, что и FB_LED
 
 // --- Пины измерения батареи (Спецификация WSL V3) ---
@@ -281,8 +281,8 @@ void setLoRaParams() {
   radio.setBandwidth(125.0);
   radio.setSpreadingFactor(8);
   radio.setCodingRate(5);                       
-  radio.setPreambleLength(6);
-  radio.setSyncWord(0x1400 | WORK_ADDRESS);     
+  radio.setPreambleLength(8);     // ВЕРНУЛИ СТАНДАРТНУЮ ПРЕАМБУЛУ (8)
+  radio.setSyncWord(0x1424);      // ЖЕСТКО ЗАДАЛИ СТАНДАРТНОЕ СИНХРОСЛОВО (Private)
 }
 
 void onReceive(byte* payload, int packetSize) {
