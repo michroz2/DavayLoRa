@@ -10,29 +10,32 @@
 
  #include <Arduino.h>
  #include <esp_sleep.h>
- #include <SPI.h>              
- #include <RadioLib.h> 
+ #include <SPI.h>
+ #include <RadioLib.h>
+ #include <Preferences.h>
  
- // ======================= ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ =======================
- #define WORK_ADDRESS 4             // Уникальный ID пары (TX-RX). Должен совпадать на обоих устройствах!
+ Preferences preferences;
  
- #define BIG_LED_BRIGHTNESS 35      // Яркость главного светодиода (через ШИМ, 0-255)
- #define BUZZER_BIPPER_VOLUME 255   // Громкость/мощность вибромотора (через ШИМ, 0-255)
+ // ======================= ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ (ИЗ ПАМЯТИ NVS) =======================
+ // Данные переменные загружаются из памяти при старте. Если память пуста, применяются эти дефолтные значения.
+ byte workAddress = 4;                 // Уникальный ID пары (TX-RX). Должен совпадать на обоих устройствах!
+ int pwmledBrightness = 35;            // Яркость главного светодиода (через ШИМ, 0-255)
+ int buzzerVolume = 255;               // Громкость/мощность вибромотора (через ШИМ, 0-255)
+ unsigned long cutoffTime = 2000;      // Максимальное время работы периферии при залипшей кнопке (мс)
+ bool measurebattery = true;           // Флаг включения проверки батареи
  
- #define CUTOFF_TIME 2000           // Максимальное время работы периферии при залипшей кнопке (мс)
- #define PING_TIMEOUT 5000          // Таймаут ожидания пинга от TX (мс). Если превышен - связь потеряна
+ // Настройки надежности связи (Константы)
+ #define PING_TIMEOUT 5000             // Таймаут ожидания пинга от TX (мс). Если превышен - связь потеряна
  
- #define MEASURE_BATTERY true       // Флаг включения проверки батареи
+ // Пороги индикации заряда батареи (в Вольтах) - Аппаратные константы
+ #define BATTERY_MIN_VOLTAGE 3.5       // Ниже этого порога устройство уходит в глубокий сон
+ #define BATTERY_VOLTAGE_1 3.6
+ #define BATTERY_VOLTAGE_2 3.7
+ #define BATTERY_VOLTAGE_3 3.8
+ #define BATTERY_VOLTAGE_4 3.9
+ #define BATTERY_VOLTAGE_5 4.0
  
- // Пороги индикации заряда батареи (в Вольтах)
- #define BATTERY_MIN_VOLTAGE 3.5    // Ниже этого порога устройство уходит в глубокий сон
- #define BATTERY_VOLTAGE_1 3.6 
- #define BATTERY_VOLTAGE_2 3.7 
- #define BATTERY_VOLTAGE_3 3.8 
- #define BATTERY_VOLTAGE_4 3.9 
- #define BATTERY_VOLTAGE_5 4.0 
- 
- #define BATTERY_PERIOD 300000      // Периодичность проверки батареи в рабочем цикле (мс) = 5 минут
+ #define BATTERY_PERIOD 300000         // Периодичность проверки батареи в рабочем цикле (мс) = 5 минут
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ (HELTEC WSL V3) =======================
  
@@ -51,9 +54,9 @@
  #define HELTEC_BATTERY_MULTIPLIER 4.9 // Коэффициент встроенного делителя: (390k + 100k) / 100k
  
  // --- Пины аппаратной шины SPI и радиомодуля SX1262 ---
- const int sckPin = 9;          
- const int misoPin = 11;        
- const int mosiPin = 10;        
+ const int sckPin = 9;
+ const int misoPin = 11;
+ const int mosiPin = 10;
  const int csPin = 8;          // Chip Select (NSS)
  const int resetPin = 12;      // Сброс модуля
  const int irqPin = 14;        // Прерывание DIO1
@@ -65,8 +68,6 @@
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ПРОТОКОЛ =======================
  
  #define WORK_FREQUENCY 434E6       // Базовая частота (Гц)
- 
- bool measurebattery = MEASURE_BATTERY; 
  
  // Настройка отладочного вывода в Serial Monitor
  #define DEBUG_ENABLE
@@ -94,21 +95,20 @@
  #define CMD_PING_OK        213     // RX: Подтверждение пинга
  
  // Переменные состояния связи
- byte workAddress = WORK_ADDRESS;  
- byte rcvAddress = 0;          
- byte rcvCmd = 0;              
- byte rcvData = 0;                  
- byte sndCmd = CMD_PING_OK;              
- byte sndData;                         
- bool signalStatus;                     
- byte workChannel;                      
- unsigned long workFrequency = WORK_FREQUENCY; 
+ byte rcvAddress = 0;
+ byte rcvCmd = 0;
+ byte rcvData = 0;
+ byte sndCmd = CMD_PING_OK;
+ byte sndData;
+ bool signalStatus;
+ byte workChannel;
+ unsigned long workFrequency = WORK_FREQUENCY;
  
  // Метрики радиосвязи
- unsigned long lastSendTime = 0;                
+ unsigned long lastSendTime = 0;
  int lastRSSI;
  float lastSNR;
- unsigned long lastTurnaround;         
+ unsigned long lastTurnaround;
  float lastFrequencyError; // В RadioLib ошибка частоты возвращается во float
  
  // Таймеры
@@ -126,7 +126,8 @@
  };
  
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
- // Помогают компилятору заранее знать о существовании функций
+ void loadConfig();
+ void saveConfig();
  void processTimeOut();
  void processCommand();
  void processSignal();
@@ -148,10 +149,39 @@
  void flashLedBattery(byte times);
  void stopWorking();
  
+ // ======================= РАБОТА С ПАМЯТЬЮ NVS =======================
+ 
+ void loadConfig() {
+   DEBUGln(F("Loading config from NVS..."));
+   preferences.begin("davaylora", false);
+   
+   workAddress = preferences.getUChar("workAddress", 4);
+   measurebattery = preferences.getBool("measureBat", true);
+   pwmledBrightness = preferences.getInt("bigLedBright", 35);
+   buzzerVolume = preferences.getInt("buzzerVol", 255);
+   cutoffTime = preferences.getULong("cutoffTime", 2000);
+   
+   preferences.end();
+   DEBUGln(F("Config loaded."));
+ }
+ 
+ void saveConfig() {
+   DEBUGln(F("Saving config to NVS..."));
+   preferences.begin("davaylora", false);
+   
+   preferences.putUChar("workAddress", workAddress);
+   preferences.putBool("measureBat", measurebattery);
+   preferences.putInt("bigLedBright", pwmledBrightness);
+   preferences.putInt("buzzerVol", buzzerVolume);
+   preferences.putULong("cutoffTime", cutoffTime);
+   
+   preferences.end();
+   DEBUGln(F("Config saved."));
+ }
+ 
  // ======================= ЛОГИКА ПРЕРЫВАНИЙ И СЕТИ =======================
  
  // Обработчик прерывания. Вызывается аппаратно, когда SX1262 принимает пакет.
- // Функция должна быть максимально короткой (только установка флага).
  #if defined(ESP8266) || defined(ESP32)
    ICACHE_RAM_ATTR
  #endif
@@ -167,7 +197,7 @@
    radio.setSpreadingFactor(8);                  // Фактор расширения спектра
    radio.setCodingRate(5);                       // Помехоустойчивое кодирование (4/5)
    radio.setPreambleLength(8);                   // Стандартная преамбула для SX1262
-   radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE);                    // Стандартное синхрослово Semtech для частных сетей (Private Network)
+   radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); // Стандартное синхрослово Semtech для частных сетей (Private Network)
  }
  
  // Отправка ответа (ACK) на передатчик
@@ -184,8 +214,8 @@
      DEBUGln(("\tTransmit failed, code: ") + String(state));
    }
    
-   lastSendTime = millis();            
-   pingTimeOutLastTime = lastSendTime; 
+   lastSendTime = millis();
+   pingTimeOutLastTime = lastSendTime;
    radio.startReceive();                         // Обязательно возвращаемся в режим прослушивания
  }
  
@@ -194,7 +224,7 @@
    if (receivedFlag) {
      receivedFlag = false;
      byte payload[256];
-     int state = radio.readData(payload, sizeof(payload)); 
+     int state = radio.readData(payload, sizeof(payload));
      
      if (state == RADIOLIB_ERR_NONE) {
        int packetSize = radio.getPacketLength();
@@ -208,15 +238,15 @@
  void onReceive(byte* payload, int packetSize) {
    DEBUGln(F("\n<<<Package Received"));
  
-   rcvAddress = payload[0];          
+   rcvAddress = payload[0];
    // Программный фильтр адресов. Если адрес чужой - игнорируем пакет
    if ((rcvAddress != workAddress) || (packetSize != 3)) {
      DEBUGln(F("Invalid package! "));
      return;
    }
  
-   rcvCmd = payload[1];              
-   rcvData = payload[2];                  
+   rcvCmd = payload[1];
+   rcvData = payload[2];
  
    lastFrequencyError = radio.getFrequencyError();
  
@@ -240,7 +270,7 @@
  
  // Обработка потери связи с TX
  void processTimeOut() {
-   if ((millis() - pingTimeOutLastTime) > PING_TIMEOUT) { 
+   if ((millis() - pingTimeOutLastTime) > PING_TIMEOUT) {
      DEBUGln(F("ZZZZZZZ"));
      signalStatus = false;
      pingTimeOutLastTime = millis();
@@ -273,21 +303,21 @@
        sendMessage(rcvAddress, CMD_PING_OK, signalStatus);     // Подтверждаем пинг
    }
    rcvCmd = 0; // Сбрасываем команду после обработки
- } 
+ }
  
  // Включение/Выключение периферии по команде
  void processSignal() {
    cutoffTimer = millis(); // Обновляем таймер защиты от "залипания"
    
    // Умножение на signalStatus (0 или 1) элегантно включает или выключает ШИМ
-   analogWrite(PIN_SIGNAL_LED, signalStatus * BIG_LED_BRIGHTNESS);
-   analogWrite(PIN_SIGNAL_BUZZERS, signalStatus * BUZZER_BIPPER_VOLUME);
-   digitalWrite(PIN_STATUS_LED, signalStatus); 
+   analogWrite(PIN_SIGNAL_LED, signalStatus * pwmledBrightness);
+   analogWrite(PIN_SIGNAL_BUZZERS, signalStatus * buzzerVolume);
+   digitalWrite(PIN_STATUS_LED, signalStatus);
  }
  
  // Аппаратная защита: если TX заклинило или сигнал длится слишком долго - отключаем периферию принудительно
  void processCutoff() {
-   if (signalStatus && (millis() - cutoffTimer > CUTOFF_TIME)) {
+   if (signalStatus && (millis() - cutoffTimer > cutoffTime)) {
      signalStatus = 0;
      // Обязательно используем analogWrite(0) для полного сброса аппаратного таймера ШИМ на ESP32
      analogWrite(PIN_SIGNAL_LED, 0);
@@ -298,7 +328,7 @@
  
  // ======================= ИНДИКАЦИЯ =======================
  
- void updateStatusLed(bool ledStatus) { 
+ void updateStatusLed(bool ledStatus) {
    digitalWrite(PIN_STATUS_LED, ledStatus);
  }
  
@@ -309,7 +339,7 @@
    delay(250);
  }
  
- void flashStatusLed(byte times) { 
+ void flashStatusLed(byte times) {
    for (int i = 0; i < times; i++) {
      flashStatusLEDOnce();
    }
@@ -330,7 +360,7 @@
  }
  
  // Логика определения отсутствия батареи по поведению контроллера заряда ("пила" напряжения)
- bool batteryVoltageOK(byte tries) { 
+ bool batteryVoltageOK(byte tries) {
    DEBUGln(F("Is battery voltage OK?"));
    float minV = 5.0;
    float maxV = 0.0;
@@ -346,7 +376,7 @@
        DEBUGln(F("Voltage out of bounds (No battery or deeply discharged)!"));
        return (false);
      }
-     delay(150); 
+     delay(150);
    }
    
    DEBUG(F("Min V: ")); DEBUG(minV); DEBUG(F(", Max V: ")); DEBUGln(maxV);
@@ -371,7 +401,7 @@
  
    digitalWrite(PIN_ADC_CTRL, HIGH); // Отключаем делитель для экономии энергии
  
-   measuredvbat *= 3.3;  
+   measuredvbat *= 3.3;
    measuredvbat /= 4095.0;           // Разрядность АЦП ESP32 (12 бит = 4096 значений)
    measuredvbat *= HELTEC_BATTERY_MULTIPLIER; // Компенсация резистивного делителя
  
@@ -389,14 +419,14 @@
  // Визуальный показ заряда (от 1 до 5 миганий)
  void showBatteryVoltage() {
    float voltage = batteryVoltage();
-   if (voltage > BATTERY_VOLTAGE_1)   flashBatteryLEDOnce(); 
-   if (voltage > BATTERY_VOLTAGE_2)   flashBatteryLEDOnce(); 
-   if (voltage > BATTERY_VOLTAGE_3)   flashBatteryLEDOnce(); 
-   if (voltage > BATTERY_VOLTAGE_4)   flashBatteryLEDOnce(); 
-   if (voltage > BATTERY_VOLTAGE_5)   flashBatteryLEDOnce(); 
+   if (voltage > BATTERY_VOLTAGE_1)   flashBatteryLEDOnce();
+   if (voltage > BATTERY_VOLTAGE_2)   flashBatteryLEDOnce();
+   if (voltage > BATTERY_VOLTAGE_3)   flashBatteryLEDOnce();
+   if (voltage > BATTERY_VOLTAGE_4)   flashBatteryLEDOnce();
+   if (voltage > BATTERY_VOLTAGE_5)   flashBatteryLEDOnce();
  }
  
- void showNoBattery() { 
+ void showNoBattery() {
    digitalWrite(PIN_BATTERY_LED, 1);
    delay(2000); // Длинный гудок (свечение), если батареи нет
    digitalWrite(PIN_BATTERY_LED, 0);
@@ -410,7 +440,7 @@
    delay(250);
  }
  
- void flashLedBattery(byte times) { 
+ void flashLedBattery(byte times) {
    for (int i = 0; i < times; i++) {
      flashBatteryLEDOnce();
    }
@@ -426,13 +456,13 @@
    digitalWrite(PIN_BATTERY_LED, 0);
    
    // Перевод процессора ESP32 и радиомодуля в спящий режим с минимальным потреблением
-   esp_deep_sleep_start(); 
+   esp_deep_sleep_start();
  }
  
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
-   delay(2000);  
+   delay(2000);
  
  #ifdef DEBUG_ENABLE
    Serial.begin(115200); // Скорость Serial увеличена для ESP32
@@ -441,6 +471,9 @@
  
    DEBUGln(F("================================"));
    DEBUGln(F("=========== START RX ==========="));
+ 
+   // Загружаем настройки из энергонезависимой памяти
+   loadConfig();
  
    // Инициализация сервисных пинов питания
    pinMode(PIN_VEXT, OUTPUT);
@@ -454,15 +487,15 @@
    pinMode(PIN_SIGNAL_LED, OUTPUT);
    
    // Убеждаемся, что всё выключено (сброс ШИМ)
-   analogWrite(PIN_SIGNAL_LED, 0); 
+   analogWrite(PIN_SIGNAL_LED, 0);
    analogWrite(PIN_SIGNAL_BUZZERS, 0);
    digitalWrite(PIN_BATTERY_LED, 0);
    delay(300);
  
    // Приветственный сигнал: зажигаем всё на 1 секунду для проверки
    updateStatusLed(true);
-   analogWrite(PIN_SIGNAL_LED, BIG_LED_BRIGHTNESS);
-   analogWrite(PIN_SIGNAL_BUZZERS, BUZZER_BIPPER_VOLUME);
+   analogWrite(PIN_SIGNAL_LED, pwmledBrightness);
+   analogWrite(PIN_SIGNAL_BUZZERS, buzzerVolume);
    delay(1000);
    updateStatusLed(false);
    analogWrite(PIN_SIGNAL_LED, 0);
@@ -471,31 +504,34 @@
  
    // Процедура замера и индикации батареи
    DEBUGln(F("Battery Test"));
-   measurebattery = testBattery();     
+   if (measurebattery) {
+     measurebattery = testBattery();
+   }
+        
    if (measurebattery) {
      DEBUGln(F("-Measuring"));
-     processBattery(); 
-     delay(500);   
+     processBattery();
+     delay(500);
      showBatteryVoltage();
-     delay(2000);   
+     delay(2000);
      showBatteryVoltage();
-     delay(500);   
+     delay(500);
    } else {
      DEBUGln(F("-Cancelled"));
      showNoBattery();
-     delay(500);   
+     delay(500);
    }
  
    // Запуск шины SPI для радиомодуля
    SPI.begin(sckPin, misoPin, mosiPin, csPin);
    
-   workFrequency = workingFrequency[WORK_ADDRESS % MAX_ADDRESS];
+   workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
    DEBUG("LoRa begin on ");
    DEBUGln(workFrequency);
    
    // Инициализация SX1262
    int state = radio.begin(workFrequency / 1000000.0);
-   if (state != RADIOLIB_ERR_NONE) {             
+   if (state != RADIOLIB_ERR_NONE) {
      DEBUGln("LoRa init failed. Code: " + String(state));
      while (true) {
        flashStatusLed(6);    // Блокирующая ошибка (6 миганий)
@@ -507,14 +543,14 @@
  
    // Привязка прерывания к функции setFlag
    radio.setDio1Action(setFlag);
-   radio.startReceive(); 
+   radio.startReceive();
  
    pingTimeOutLastTime = millis();
  
    DEBUGln(F("DavayLoRa RX setup complete"));
  }
  
- void loop() { 
+ void loop() {
    checkReceive(); // Проверяем флаг прерывания
  
    if (rcvCmd)
