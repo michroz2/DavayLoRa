@@ -167,7 +167,7 @@
    radio.setSpreadingFactor(8);                  // Фактор расширения спектра
    radio.setCodingRate(5);                       // Помехоустойчивое кодирование (4/5)
    radio.setPreambleLength(8);                   // Стандартная преамбула для SX1262
-   radio.setSyncWord(0x1424);                    // Стандартное синхрослово Semtech для частных сетей (Private Network)
+   radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE);                    // Стандартное синхрослово Semtech для частных сетей (Private Network)
  }
  
  // Отправка ответа (ACK) на передатчик

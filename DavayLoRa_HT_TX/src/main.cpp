@@ -225,7 +225,7 @@
    radio.setSpreadingFactor(8);
    radio.setCodingRate(5);                       
    radio.setPreambleLength(8);     // Согласовано с RX
-   radio.setSyncWord(0x1424);      // Согласовано с RX
+   radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE);      // Согласовано с RX
  }
  
  // Парсинг ответа (ACK) от приёмника
