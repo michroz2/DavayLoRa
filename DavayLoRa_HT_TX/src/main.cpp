@@ -3,9 +3,11 @@
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * * Описание логики:
  * Пульт реагирует на нажатие физической кнопки. Отправляет команду включения,
- * ждет ACK от приёмника. При удержании кнопки генерирует периодические ПИНГ-пакеты,
+ * ждет ACK от приёмника. Генерирует периодические ПИНГ-пакеты,
  * чтобы приёмник понимал, что связь не оборвалась.
  * Поддерживает режим отладки, индикацию состояния и мониторинг батареи.
+ * Version 2.1.1
+ * Реализация отслеживания непрерывного удержания кнопки в течение 10 секунд.
  */
 
  #include <Arduino.h>
@@ -125,6 +127,16 @@
  
  volatile bool receivedFlag = false;
  
+ // --- Стейт-машина пульта ---
+enum SystemState {
+  STATE_NORMAL,
+  STATE_PREPARATION
+};
+SystemState currentState = STATE_NORMAL;
+
+unsigned long buttonPressStartTime = 0; // Время начала удержания кнопки
+unsigned long prepModeTimer = 0;        // Таймер 10 секунд для автовыхода
+
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
  void saveConfig();
@@ -295,36 +307,40 @@
  
  // Обработка физического нажатия главной кнопки (с учетом стейт-машины)
  void processButton() {
-   prevButtonState = currButtonState;
-   currButtonState = !digitalRead(PIN_BUTTON); // Инверсия (INPUT_PULLUP замыкает на землю)
-   
-   // Реагируем только на изменение состояния (отпущена -> нажата или наоборот)
-   if (prevButtonState != currButtonState) {
-     lastButtonTime = millis();
-     pingTimer = millis();
-     buttonPressedFirstTime = true;
-     DEBUGln("\nprocessButton(): " + String(currButtonState));
-     prevButtonState = currButtonState;
-     
-     if (currButtonState) {
-       // Кнопка НАЖАТА: Пытаемся установить связь (commSession)
-       if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
-         updateStatusLed(true); // Зажигаем Feedback
-         updateBIGLed(true);    // Включаем внешнюю периферию
-       } else {
-         // Если приёмник не ответил
-         updateBIGLed(false);
-         flashStatusLed(2);     // Ошибка связи
-       }
-     } else {
-       // Кнопка ОТПУЩЕНА: Отправляем команду на выключение (в один конец)
-       sendMessage(CMD_SIGNAL, false);
-       updateStatusLed(false);
-       updateBIGLed(false);
-     }
-   }
- }
- 
+  prevButtonState = currButtonState;
+  currButtonState = !digitalRead(PIN_BUTTON); // Инверсия (INPUT_PULLUP замыкает на землю)
+  
+  if (prevButtonState != currButtonState) {
+    lastButtonTime = millis();
+    pingTimer = millis();
+    buttonPressedFirstTime = true;
+    DEBUGln("\nprocessButton(): " + String(currButtonState));
+    prevButtonState = currButtonState;
+    
+    if (currButtonState) {
+      // Кнопка НАЖАТА
+      buttonPressStartTime = millis(); // Фиксируем время нажатия для таймера 10 сек
+      
+      if (currentState == STATE_NORMAL) {
+        if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
+          updateStatusLed(true);
+          updateBIGLed(true);
+        } else {
+          updateBIGLed(false);
+          flashStatusLed(2);
+        }
+      }
+    } else {
+      // Кнопка ОТПУЩЕНА
+      if (currentState == STATE_NORMAL) {
+        sendMessage(CMD_SIGNAL, false);
+        updateStatusLed(false);
+        updateBIGLed(false);
+      }
+    }
+  }
+}
+
  // Генератор пингов (если кнопка удерживается, нужно подтверждать RX, что мы на связи)
  void processPing() {
    if (!buttonPressedFirstTime) return; // Пингуем, только если кнопка зажата
@@ -357,6 +373,22 @@
    }
  }
  
+ void processPreparationMode() {
+  // Мигание статусным диодом 3 Гц (период ~333 мс)
+  EVERY_MS(166) {
+    static bool prepLedState = false;
+    prepLedState = !prepLedState;
+    updateStatusLed(prepLedState);
+  }
+
+  // Если прошло 10 секунд бездействия - возвращаемся в норму
+  if (millis() - prepModeTimer > 10000) {
+    DEBUGln(F("Exit Preparation Mode (Timeout)"));
+    currentState = STATE_NORMAL;
+    updateStatusLed(false);
+  }
+}
+
  // ======================= ИНДИКАЦИЯ =======================
  
  // Обратная связь на встроенном LED (На TX используем digitalWrite для экономии ресурсов)
@@ -579,17 +611,38 @@
    DEBUGln("DavayLoRa TX setup complete, waiting for 1-st buttonpress");
  }
  
+
  void loop() {
-   checkReceive(); // Проверяем эфир на наличие ACK от приёмника
-   
-   // Опрос кнопки с антидребезгом
-   if ((millis() - lastButtonTime) > DEBOUNCE_TIME)
-     processButton();
-     
-   processPing();  // Поддержка связи при залипании кнопки
-   
-   // Регулярная проверка батареи
-   EVERY_MS(BATTERY_PERIOD) {
-     if (measurebattery) processBattery();
-   }
- }
+  checkReceive(); 
+  
+  if ((millis() - lastButtonTime) > DEBOUNCE_TIME) {
+    processButton();
+  }
+  
+  // Логика перехода в режим подготовки (удержание 10 сек в нормальном режиме)
+  if (currentState == STATE_NORMAL && currButtonState) {
+    if (millis() - buttonPressStartTime > 10000) {
+      DEBUGln(F("Enter Preparation Mode!"));
+      currentState = STATE_PREPARATION;
+      prepModeTimer = millis(); // Запускаем таймер бездействия
+      
+      // Выключаем рабочий сигнал, если он был отправлен
+      sendMessage(CMD_SIGNAL, false); 
+      updateBIGLed(false);
+      
+      // Искусственно сбрасываем состояние кнопки, чтобы не отправлять лишних команд
+      buttonPressedFirstTime = false; 
+    }
+  }
+
+  // Маршрутизация стейт-машины
+  if (currentState == STATE_NORMAL) {
+    processPing();
+  } else if (currentState == STATE_PREPARATION) {
+    processPreparationMode();
+  }
+  
+  EVERY_MS(BATTERY_PERIOD) {
+    if (measurebattery) processBattery();
+  }
+}
