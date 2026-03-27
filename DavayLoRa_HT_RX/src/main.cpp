@@ -1,11 +1,7 @@
 /**
  * @file main.cpp (RX)
- * @version 1.1 (Добавлены флаги периферии и пин геркона)
+ * @version 1.5 (Изменение: Засыпание системы по 5-секундному удержанию кнопки USER)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
- * * Описание логики:
- * Приёмник находится в режиме постоянного прослушивания эфира (RX Continuous).
- * При получении команды от передатчика (TX) включает выбранные исполнительные устройства
- * и отправляет пакет-подтверждение (Acknowledge).
  */
 
  #include <Arduino.h>
@@ -17,18 +13,18 @@
  Preferences preferences;
  
  // ======================= ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ (ИЗ ПАМЯТИ NVS) =======================
- byte workAddress = 4;                 // Уникальный ID пары (TX-RX). Должен совпадать на обоих устройствах!
- int pwmledBrightness = 35;            // Яркость главного светодиода (через ШИМ, 0-255)
- int buzzerVolume = 255;               // Громкость/мощность вибромотора (через ШИМ, 0-255)
- unsigned long cutoffTime = 2000;      // Максимальное время работы периферии при залипшей кнопке (мс)
- bool measurebattery = true;           // Флаг включения проверки батареи
+ byte workAddress = 4;                 
+ int pwmledBrightness = 35;            
+ int buzzerVolume = 255;               
+ unsigned long cutoffTime = 2000;      
+ bool measurebattery = true;           
  
  // Настройки активной периферии
- bool enableBigLed = true;             // Включен ли главный сигнальный светодиод
- bool enableBuzzer = false;            // Включен ли баззер/вибромотор
+ bool enableBigLed = true;             
+ bool enableBuzzer = false;            
  
  // Настройки надежности связи (Константы)
- #define PING_TIMEOUT 5000             // Таймаут ожидания пинга от TX (мс)
+ #define PING_TIMEOUT 5000             
  
  // Пороги индикации заряда батареи (в Вольтах)
  #define BATTERY_MIN_VOLTAGE 3.5
@@ -43,18 +39,19 @@
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ (HELTEC WSL V3) =======================
  
  // --- Исполнительные пины ---
- #define PIN_SIGNAL_LED      41     // Затвор транзистора главного ЛЕДа
- #define PIN_SIGNAL_BUZZERS  42     // Затвор транзистора Баззера/Вибро
- #define PIN_REED            7      // Пин подключения магнитоуправляемого контакта (Геркона) к GND
+ #define PIN_SIGNAL_LED      41     
+ #define PIN_SIGNAL_BUZZERS  42     
+ #define PIN_REED            7      
+ #define PIN_USER            0      // Встроенная кнопка PRG/USER на плате Heltec
  
  // --- Индикация (Встроенный LED) ---
- #define PIN_STATUS_LED      35     // Встроенный белый светодиод
- #define PIN_BATTERY_LED     35     // Тот же пин для моргания заряда батареи
+ #define PIN_STATUS_LED      35     
+ #define PIN_BATTERY_LED     35     
  
  // --- Пины измерения батареи ---
- #define PIN_BATTERY_INTERNAL 1     // Пин АЦП для замера напряжения (ADC1_CH0)
- #define PIN_VEXT 36                // Управление внешним питанием (Vext)
- #define PIN_ADC_CTRL 37            // Управление аппаратным делителем батареи
+ #define PIN_BATTERY_INTERNAL 1     
+ #define PIN_VEXT 36                
+ #define PIN_ADC_CTRL 37            
  #define HELTEC_BATTERY_MULTIPLIER 4.9 
  
  // --- Пины аппаратной шины SPI и радиомодуля SX1262 ---
@@ -84,7 +81,7 @@
  #define EVERY_MS(x) \
    static uint32_t tmr;\
    bool flg = millis() - tmr >= (x);\
-   if (flg) tmr = millis();\
+   if (flg) { tmr = millis(); }\
    if (flg)
  
  #define MAX_ADDRESS 20
@@ -93,6 +90,8 @@
  #define CMD_SIGNAL_OK      209
  #define CMD_PING           212
  #define CMD_PING_OK        213
+ #define CMD_SLEEP          214
+ #define CMD_SLEEP_OK       215
  
  byte rcvAddress = 0;
  byte rcvCmd = 0;
@@ -127,6 +126,8 @@
  void processCommand();
  void processSignal();
  void processCutoff();
+ void processUserButton();
+ void goToSleep();
  void updateStatusLed(bool ledStatus);
  void flashStatusLEDOnce();
  void flashStatusLed(byte times);
@@ -259,6 +260,17 @@
  
  // ======================= БИЗНЕС-ЛОГИКА (УПРАВЛЕНИЕ ПЕРИФЕРИЕЙ) =======================
  
+ // Вынесенная логика ухода в сон
+ void goToSleep() {
+   flashStatusLed(3); 
+   analogWrite(PIN_SIGNAL_LED, 0);
+   analogWrite(PIN_SIGNAL_BUZZERS, 0);
+   digitalWrite(PIN_STATUS_LED, 0);
+   
+   DEBUGln(F("Going to deep sleep..."));
+   esp_deep_sleep_start();
+ } // end goToSleep
+ 
  void processTimeOut() {
    if ((millis() - pingTimeOutLastTime) > PING_TIMEOUT) {
      DEBUGln(F("ZZZZZZZ"));
@@ -270,7 +282,7 @@
  
  void processCommand() {
    switch (rcvCmd) {
-     case CMD_SIGNAL:
+     case CMD_SIGNAL: {
        DEBUGln(F("=== CMD_SIGNAL ==="));
        signalStatus = rcvData;
        processSignal();
@@ -278,7 +290,9 @@
          sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus); 
        } // end if
        break;
-     case CMD_PING:
+     } // end case CMD_SIGNAL
+     
+     case CMD_PING: {
        unsigned long flashStatus = millis();
        DEBUGln(F("=== CMD_PING ==="));
        signalStatus = rcvData;
@@ -293,6 +307,16 @@
        
        sendMessage(rcvAddress, CMD_PING_OK, signalStatus);     
        break;
+     } // end case CMD_PING
+       
+     case CMD_SLEEP: {
+       DEBUGln(F("=== CMD_SLEEP ==="));
+       sendMessage(rcvAddress, CMD_SLEEP_OK, 1); 
+       delay(100); 
+       
+       goToSleep();
+       break;
+     } // end case CMD_SLEEP
    } // end switch
    rcvCmd = 0; 
  } // end processCommand
@@ -323,6 +347,22 @@
      digitalWrite(PIN_STATUS_LED, 0);
    } // end if
  } // end processCutoff
+ 
+ // Обработка встроенной кнопки USER
+ void processUserButton() {
+   static unsigned long userButtonTimer = 0;
+   
+   if (digitalRead(PIN_USER) == LOW) { // Кнопка зажата (замыкание на GND)
+     if (userButtonTimer == 0) {
+       userButtonTimer = millis();
+     } else if (millis() - userButtonTimer > 5000) {
+       DEBUGln(F("USER button held 5s -> LOCAL SLEEP"));
+       goToSleep(); // Локально засыпаем
+     } // end if
+   } else {
+     userButtonTimer = 0; // Кнопка отпущена
+   } // end if
+ } // end processUserButton
  
  // ======================= ИНДИКАЦИЯ =======================
  
@@ -459,7 +499,7 @@
  
  #ifdef DEBUG_ENABLE
    Serial.begin(115200); 
-   while (!Serial);
+   while (!Serial); // end while
  #endif
  
    DEBUGln(F("================================"));
@@ -476,8 +516,8 @@
    pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
    pinMode(PIN_SIGNAL_LED, OUTPUT);
    
-   // Подтягиваем пин геркона к питанию (режим INPUT_PULLUP)
    pinMode(PIN_REED, INPUT_PULLUP);
+   pinMode(PIN_USER, INPUT_PULLUP); // Инициализация кнопки USER
    
    analogWrite(PIN_SIGNAL_LED, 0);
    analogWrite(PIN_SIGNAL_BUZZERS, 0);
@@ -553,7 +593,9 @@
      processTimeOut(); 
    } // end if
  
-   processCutoff();    
+   processCutoff();
+   
+   processUserButton(); // Проверка 5-секундного удержания кнопки USER
  
    EVERY_MS(BATTERY_PERIOD) {
      if (measurebattery) {
@@ -561,4 +603,3 @@
      } // end if
    } // end EVERY_MS
  } // end loop
- 

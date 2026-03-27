@@ -1,13 +1,7 @@
 /**
  * @file main.cpp (TX)
+ * @version 1.3 (Изменение: Засыпание системы по 5-секундному удержанию кнопки USER)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
- * * Описание логики:
- * Пульт реагирует на нажатие физической кнопки. Отправляет команду включения,
- * ждет ACK от приёмника. Генерирует периодические ПИНГ-пакеты,
- * чтобы приёмник понимал, что связь не оборвалась.
- * Поддерживает режим отладки, индикацию состояния и мониторинг батареи.
- * Version 2.1.1
- * Реализация отслеживания непрерывного удержания кнопки в течение 10 секунд.
  */
 
  #include <Arduino.h>
@@ -19,15 +13,14 @@
  Preferences preferences;
  
  // ======================= ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ (ИЗ ПАМЯТИ NVS) =======================
- // Данные переменные загружаются из памяти при старте. Если память пуста, применяются эти дефолтные значения.
- byte workAddress = 4;                 // Уникальный ID пары (TX-RX). Должен совпадать!
- int pwmledBrightness = 35;            // Яркость главного сигнального светодиода
- int fbledBrightness = 255;            // Яркость светодиода обратной связи на кнопке (Feedback)
- unsigned long pingTimeout = 3000;     // Периодичность отправки пингов при удержании кнопки (мс)
- unsigned long bigTimeout = 3600000;   // Максимальное время работы пульта (1 час), защита от случайного нажатия
- bool measurebattery = true;           // Измерять ли батарею
+ byte workAddress = 4;                 
+ int pwmledBrightness = 35;            
+ int fbledBrightness = 255;            
+ unsigned long pingTimeout = 3000;     
+ unsigned long bigTimeout = 3600000;   
+ bool measurebattery = true;           
  
- // Пороги индикации заряда батареи (в Вольтах) - Аппаратные константы
+ // Пороги индикации заряда батареи (в Вольтах)
  #define BATTERY_MIN_VOLTAGE 3.5
  #define BATTERY_VOLTAGE_1 3.5
  #define BATTERY_VOLTAGE_2 3.6
@@ -40,15 +33,16 @@
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ (HELTEC WSL V3) =======================
  
  // --- Пины интерфейса ---
- #define PIN_BUTTON 45          // Пин подключения кнопки (срабатывает на замыкание к земле)
- #define PIN_FB_LED 35          // Пин встроенного светодиода (Feedback LED)
- #define PIN_BIG_LED 41         // Пин внешнего сигнального светодиода
- #define PIN_BATTERY_LED 35     // Пин индикации заряда
+ #define PIN_BUTTON 45          
+ #define PIN_FB_LED 35          
+ #define PIN_BIG_LED 41         
+ #define PIN_BATTERY_LED 35     
+ #define PIN_USER 0             // Встроенная кнопка PRG/USER на плате Heltec
  
  // --- Пины измерения батареи ---
- #define PIN_BATTERY_INTERNAL 1 // АЦП
- #define PIN_VEXT 36            // Управление периферией платы
- #define PIN_ADC_CTRL 37        // Включение/выключение делителя
+ #define PIN_BATTERY_INTERNAL 1 
+ #define PIN_VEXT 36            
+ #define PIN_ADC_CTRL 37        
  #define HELTEC_BATTERY_MULTIPLIER 4.9
  
  // --- Пины SPI и SX1262 ---
@@ -78,22 +72,24 @@
  #define EVERY_MS(x) \
    static uint32_t tmr;\
    bool flg = millis() - tmr >= (x);\
-   if (flg) tmr = millis();\
+   if (flg) { tmr = millis(); }\
    if (flg)
  
  #define MAX_ADDRESS 20
  
  // Настройки надежности радиообмена
- #define DEFAULT_TURNAROUND 300     // Базовое время ожидания ответа (мс)
- #define WORK_COMM_ATTEMPTS 3       // Количество попыток передачи, если нет ответа
- #define PING_FLASH 100             // Длительность мигания LED при пинге (мс)
- #define DEBOUNCE_TIME 100          // Антидребезг контактов кнопки (мс)
+ #define DEFAULT_TURNAROUND 300     
+ #define WORK_COMM_ATTEMPTS 3       
+ #define PING_FLASH 100             
+ #define DEBOUNCE_TIME 100          
  
  // Команды протокола
  #define CMD_SIGNAL    208
  #define CMD_SIGNAL_OK 209
  #define CMD_PING      212
  #define CMD_PING_OK   213
+ #define CMD_SLEEP     214
+ #define CMD_SLEEP_OK  215
  
  // Переменные стейт-машины и сети
  byte sndCmd = CMD_PING;
@@ -117,8 +113,6 @@
  bool currButtonState;
  bool prevButtonState;
  bool buttonPressedFirstTime;
- bool buttonChanged;
- bool buttonSent;
  
  // Таймеры пинга
  unsigned long pingTimer;
@@ -128,20 +122,25 @@
  volatile bool receivedFlag = false;
  
  // --- Стейт-машина пульта ---
-enum SystemState {
-  STATE_NORMAL,
-  STATE_PREPARATION
-};
-SystemState currentState = STATE_NORMAL;
-
-unsigned long buttonPressStartTime = 0; // Время начала удержания кнопки
-unsigned long prepModeTimer = 0;        // Таймер 10 секунд для автовыхода
-
+ enum SystemState {
+   STATE_NORMAL,
+   STATE_PREPARATION
+ };
+ SystemState currentState = STATE_NORMAL;
+ 
+ unsigned long buttonPressStartTime = 0; 
+ unsigned long prepModeTimer = 0;        
+ byte prepClickCount = 0;
+ unsigned long lastPrepClickTime = 0;
+ 
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
  void saveConfig();
  void processButton();
+ void processPreparationMode();
  void processPing();
+ void processUserButton();
+ void sleepSystem();
  void updateStatusLed(bool ledStatus);
  void updateBIGLed(bool ledStatus);
  void flashStatusLed(byte times);
@@ -164,9 +163,8 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
  
  void loadConfig() {
    DEBUGln(F("Loading config from NVS..."));
-   preferences.begin("davaylora", false); // Открываем пространство имен (только чтение/запись)
+   preferences.begin("davaylora", false); 
    
-   // Если ключа в памяти нет (первый запуск), берется второй аргумент (дефолт)
    workAddress = preferences.getUChar("workAddress", 4);
    measurebattery = preferences.getBool("measureBat", true);
    pwmledBrightness = preferences.getInt("bigLedBright", 35);
@@ -176,7 +174,7 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    
    preferences.end();
    DEBUGln(F("Config loaded."));
- }
+ } // end loadConfig
  
  void saveConfig() {
    DEBUGln(F("Saving config to NVS..."));
@@ -191,7 +189,7 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    
    preferences.end();
    DEBUGln(F("Config saved."));
- }
+ } // end saveConfig
  
  // ======================= ЛОГИКА ПРЕРЫВАНИЙ И СЕТИ =======================
  
@@ -200,9 +198,8 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
  #endif
  void setFlag(void) {
    receivedFlag = true;
- }
+ } // end setFlag
  
- // Отправка пакета данных (без ожидания ответа)
  void sendMessage(byte msgCmd, byte sndData) {
    DEBUGln(">>>sendMessage()");
    byte payload[3] = {workAddress, msgCmd, sndData};
@@ -213,13 +210,12 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
      DEBUGln(("\tMessage sent: ") + String(workAddress) + " " + String(msgCmd) + " " + String(sndData));
    } else {
      DEBUGln(("\tTransmit failed, code: ") + String(state));
-   }
+   } // end if
    
    lastSendTime = millis();
-   radio.startReceive(); // Возврат в режим ожидания ответа от RX
- }
+   radio.startReceive(); 
+ } // end sendMessage
  
- // Проверка эфира
  void checkReceive() {
    if (receivedFlag) {
      receivedFlag = false;
@@ -229,31 +225,29 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
      if (state == RADIOLIB_ERR_NONE) {
        int packetSize = radio.getPacketLength();
        onReceive(payload, packetSize);
-     }
+     } // end if
      
      radio.startReceive();
-   }
- }
+   } // end if
+ } // end checkReceive
  
- // Синхронная сессия связи (Отправка -> Ожидание ответа с ретраями)
  bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes) {
    DEBUGln(F("commSession()"));
    wasReceived = false;
-   cmdExpected = expectedReply; // Какую команду ждем от приёмника
+   cmdExpected = expectedReply; 
    pingTimer = millis();
    
    do {
      checkReceive();
-     // Если время вышло, пробуем отправить пакет снова (retries)
      EVERY_MS(waitMilliseconds) {
        sendMessage(msgCmd, sndData);
        doTimes--;
-     }
-   } while ((doTimes > 0) && (!wasReceived)); // Крутимся, пока не получим ответ или не кончатся попытки
+     } // end EVERY_MS
+   } while ((doTimes > 0) && (!wasReceived)); // end while
    
    pingTimer = millis();
-   return wasReceived; // Возвращает true, если связь успешна
- }
+   return wasReceived; 
+ } // end commSession
  
  unsigned long workingFrequency[MAX_ADDRESS] = {
    434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
@@ -267,11 +261,10 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    radio.setBandwidth(125.0);
    radio.setSpreadingFactor(8);
    radio.setCodingRate(5);
-   radio.setPreambleLength(8);     // Согласовано с RX
-   radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); // Согласовано с RX
- }
+   radio.setPreambleLength(8);     
+   radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); 
+ } // end setLoRaParams
  
- // Парсинг ответа (ACK) от приёмника
  void onReceive(byte* payload, int packetSize) {
    DEBUGln("<<<PackageReceived");
  
@@ -279,18 +272,16 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    if ((rcvAddress != workAddress) || (packetSize != 3)) {
      delay(30);
      return;
-   }
+   } // end if
  
    rcvCmd = payload[1];
-   // Проверяем, ответил ли приёмник ожидаемой командой
    if (rcvCmd != cmdExpected) {
      DEBUGln("\tInvalid Reply: " + String(rcvCmd) + F(", Expected: ") + String(cmdExpected));
      delay(30);
      return;
-   }
+   } // end if
    rcvData = payload[2];
  
-   // Анализ задержки (Turnaround) помогает адаптировать таймауты
    lastTurnaround = millis() - lastSendTime;
    lastFrequencyError = radio.getFrequencyError();
    lastRSSI = radio.getRSSI();
@@ -300,106 +291,141 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    DEBUGln(("\tTurnaround: ") + String(lastTurnaround));
    DEBUGln(F("=== onReceive done ==="));
  
-   wasReceived = true; // Успешный прием
- }
+   wasReceived = true; 
+ } // end onReceive
  
  // ======================= БИЗНЕС-ЛОГИКА (КНОПКА И ПИНГ) =======================
  
- // Обработка физического нажатия главной кнопки (с учетом стейт-машины)
- void processButton() {
-  prevButtonState = currButtonState;
-  currButtonState = !digitalRead(PIN_BUTTON); // Инверсия (INPUT_PULLUP замыкает на землю)
-  
-  if (prevButtonState != currButtonState) {
-    lastButtonTime = millis();
-    pingTimer = millis();
-    buttonPressedFirstTime = true;
-    DEBUGln("\nprocessButton(): " + String(currButtonState));
-    prevButtonState = currButtonState;
-    
-    if (currButtonState) {
-      // Кнопка НАЖАТА
-      buttonPressStartTime = millis(); // Фиксируем время нажатия для таймера 10 сек
+ // Вынесенная логика усыпления системы
+ void sleepSystem() {
+   if (commSession(CMD_SLEEP, 1, CMD_SLEEP_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
+      DEBUGln(F("RX is sleeping, TX going to sleep too"));
+      updateStatusLed(true);
+      delay(2000);
+      updateStatusLed(false);
       
-      if (currentState == STATE_NORMAL) {
-        if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
-          updateStatusLed(true);
-          updateBIGLed(true);
-        } else {
-          updateBIGLed(false);
-          flashStatusLed(2);
-        }
-      }
-    } else {
-      // Кнопка ОТПУЩЕНА
-      if (currentState == STATE_NORMAL) {
-        sendMessage(CMD_SIGNAL, false);
-        updateStatusLed(false);
-        updateBIGLed(false);
-      }
-    }
-  }
-}
-
- // Генератор пингов (если кнопка удерживается, нужно подтверждать RX, что мы на связи)
- void processPing() {
-   if (!buttonPressedFirstTime) return; // Пингуем, только если кнопка зажата
+      esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0); 
+      esp_deep_sleep_start();
+   } else {
+      DEBUGln(F("Failed to send SLEEP to RX"));
+      flashStatusLed(2); 
+   } // end if
+ } // end sleepSystem
+ 
+ void processButton() {
+   prevButtonState = currButtonState;
+   currButtonState = !digitalRead(PIN_BUTTON); 
    
-   // Управление кратковременным морганием светодиода при отправке пинга
+   if (prevButtonState != currButtonState) {
+     lastButtonTime = millis();
+     DEBUGln("\nprocessButton(): " + String(currButtonState));
+     prevButtonState = currButtonState;
+     
+     if (currButtonState) {
+       if (currentState == STATE_NORMAL) {
+         buttonPressStartTime = millis(); 
+         pingTimer = millis();
+         buttonPressedFirstTime = true;
+         
+         if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
+           updateStatusLed(true); 
+           updateBIGLed(true);    
+         } else {
+           updateBIGLed(false);
+           flashStatusLed(2);     
+         } // end if
+       } else if (currentState == STATE_PREPARATION) {
+         prepClickCount++;
+         lastPrepClickTime = millis();
+         prepModeTimer = millis(); 
+       } // end if
+     } else {
+       if (currentState == STATE_NORMAL) {
+         sendMessage(CMD_SIGNAL, false);
+         updateStatusLed(false);
+         updateBIGLed(false);
+       } // end if
+     } // end if
+   } // end if
+ } // end processButton
+ 
+ void processPreparationMode() {
+   EVERY_MS(166) {
+     static bool prepLedState = false;
+     prepLedState = !prepLedState;
+     updateStatusLed(prepLedState);
+   } // end EVERY_MS
+ 
+   if (prepClickCount > 0 && (millis() - lastPrepClickTime > 600)) {
+     if (prepClickCount == 2) {
+       DEBUGln(F("2 clicks detected -> Go to SLEEP"));
+       sleepSystem();
+     } // end if
+     prepClickCount = 0; 
+   } // end if
+ 
+   if (millis() - prepModeTimer > 10000) {
+     DEBUGln(F("Exit Preparation Mode (Timeout)"));
+     currentState = STATE_NORMAL;
+     prepClickCount = 0; 
+     updateStatusLed(false);
+   } // end if
+ } // end processPreparationMode
+ 
+ void processPing() {
+   if (!buttonPressedFirstTime) { return; } // end if
+   
    if (pingFlash) {
      if ((millis() - pingFlashTimer) > PING_FLASH) {
        DEBUGln(F("\tPing LED OFF"));
        pingFlash = false;
        updateStatusLed(currButtonState);
-     }
+     } // end if
    } else if ((millis() - pingTimer) > pingTimeout) {
      DEBUGln(F("\nStart Ping"));
-     // Отправляем пинг и ждем ответ (commSession)
      if (commSession(CMD_PING, currButtonState, CMD_PING_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
        DEBUGln(F("\tPing LED ON"));
-       updateStatusLed(!currButtonState); // Инвертируем диод для вспышки
+       updateStatusLed(!currButtonState); 
        pingFlash = true;
        pingFlashTimer = millis();
        pingTimer = millis();
      } else {
-       flashStatusLed(2); // Ошибка: потеряли связь во время удержания
-     }
-   }
+       flashStatusLed(2); 
+     } // end if
+   } // end if
    
-   // Защита от долгого удержания (уснули на пульте или залипла кнопка в сумке)
    if ((millis() - lastButtonTime) > bigTimeout) {
      flashStatusLed(3);
      buttonPressedFirstTime = false;
-   }
- }
+   } // end if
+ } // end processPing
  
- void processPreparationMode() {
-  // Мигание статусным диодом 3 Гц (период ~333 мс)
-  EVERY_MS(166) {
-    static bool prepLedState = false;
-    prepLedState = !prepLedState;
-    updateStatusLed(prepLedState);
-  }
-
-  // Если прошло 10 секунд бездействия - возвращаемся в норму
-  if (millis() - prepModeTimer > 10000) {
-    DEBUGln(F("Exit Preparation Mode (Timeout)"));
-    currentState = STATE_NORMAL;
-    updateStatusLed(false);
-  }
-}
-
+ // Обработка встроенной кнопки USER
+ void processUserButton() {
+   static unsigned long userButtonTimer = 0;
+   
+   if (digitalRead(PIN_USER) == LOW) { // Кнопка зажата (замыкание на GND)
+     if (userButtonTimer == 0) {
+       userButtonTimer = millis(); // Фиксируем начало нажатия
+     } else if (millis() - userButtonTimer > 5000) {
+       DEBUGln(F("USER button held 5s -> Centralized SLEEP"));
+       sleepSystem(); // Используем ту же логику усыпления обеих плат
+       userButtonTimer = 0; // Сброс таймера (если связь с RX прервалась и сон отменился)
+     } // end if
+   } else {
+     userButtonTimer = 0; // Кнопка отпущена
+   } // end if
+ } // end processUserButton
+ 
  // ======================= ИНДИКАЦИЯ =======================
  
- // Обратная связь на встроенном LED (На TX используем digitalWrite для экономии ресурсов)
  void updateStatusLed(bool ledStatus) {
    digitalWrite(PIN_FB_LED, ledStatus);
- }
+ } // end updateStatusLed
  
- // Управление мощным внешним LED (через ШИМ)
  void updateBIGLed(bool ledStatus) {
    analogWrite(PIN_BIG_LED, ledStatus * pwmledBrightness);
- }
+ } // end updateBIGLed
  
  void flashStatusLed(byte times) {
    for (int i = 0; i < times; i++) {
@@ -407,8 +433,8 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
      delay(100);
      updateStatusLed(false);
      delay(200);
-   }
- }
+   } // end for
+ } // end flashStatusLed
  
  // ======================= УПРАВЛЕНИЕ БАТАРЕЕЙ =======================
  
@@ -417,10 +443,10 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    if (batteryVoltageOK(5)) {
      DEBUGln(F("Батарея подключена и измеритель РАБОТАЕТ!"));
      return (true);
-   }
+   } // end if
    DEBUGln(F("Батарея НЕ ПОДКЛЮЧЕНА (или сбой измерителя)!"));
    return (false);
- }
+ } // end testBattery
  
  bool batteryVoltageOK(byte tries) {
    DEBUGln(F("Is battery voltage OK?"));
@@ -430,26 +456,26 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    for (byte i = 0; i < tries; i++) {
      float currentVBat = batteryVoltage();
      
-     if (currentVBat < minV) minV = currentVBat;
-     if (currentVBat > maxV) maxV = currentVBat;
+     if (currentVBat < minV) { minV = currentVBat; } // end if
+     if (currentVBat > maxV) { maxV = currentVBat; } // end if
      
      if ((currentVBat > 4.3) || (currentVBat < 2.5)) {
        DEBUGln(F("Voltage out of bounds (No battery or deeply discharged)!"));
        return (false);
-     }
+     } // end if
      
      delay(150);
-   }
+   } // end for
    
    DEBUG(F("Min V: ")); DEBUG(minV); DEBUG(F(", Max V: ")); DEBUGln(maxV);
    
    if ((maxV - minV) > 0.05) {
      DEBUGln(F("Voltage is unstable (Sawtooth ripple)! Батарея НЕ подключена!"));
      return (false);
-   }
+   } // end if
    
    return (true);
- }
+ } // end batteryVoltageOK
  
  float batteryVoltage() {
    DEBUG(F("Battery Voltage: "));
@@ -467,46 +493,44 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
  
    DEBUGln(measuredvbat);
    return measuredvbat;
- }
+ } // end batteryVoltage
  
  void showBatteryVoltage() {
    float voltage = batteryVoltage();
-   if (voltage > BATTERY_VOLTAGE_1) flashBatteryLEDOnce();
-   if (voltage > BATTERY_VOLTAGE_2) flashBatteryLEDOnce();
-   if (voltage > BATTERY_VOLTAGE_3) flashBatteryLEDOnce();
-   if (voltage > BATTERY_VOLTAGE_4) flashBatteryLEDOnce();
-   if (voltage > BATTERY_VOLTAGE_5) flashBatteryLEDOnce();
- }
+   if (voltage > BATTERY_VOLTAGE_1) { flashBatteryLEDOnce(); } // end if
+   if (voltage > BATTERY_VOLTAGE_2) { flashBatteryLEDOnce(); } // end if
+   if (voltage > BATTERY_VOLTAGE_3) { flashBatteryLEDOnce(); } // end if
+   if (voltage > BATTERY_VOLTAGE_4) { flashBatteryLEDOnce(); } // end if
+   if (voltage > BATTERY_VOLTAGE_5) { flashBatteryLEDOnce(); } // end if
+ } // end showBatteryVoltage
  
  void showNoBattery() {
    digitalWrite(PIN_BATTERY_LED, 1);
    delay(2000);
    digitalWrite(PIN_BATTERY_LED, 0);
    delay(250);
- }
+ } // end showNoBattery
  
- // Зажигание диода проверки батареи. Работает через цифровой сигнал (digitalWrite)
  void flashBatteryLEDOnce() {
    digitalWrite(PIN_BATTERY_LED, 1);
    delay(250);
    digitalWrite(PIN_BATTERY_LED, 0);
    delay(250);
- }
+ } // end flashBatteryLEDOnce
  
  void flashLedBattery(byte times) {
    for (int i = 0; i < times; i++) {
      flashBatteryLEDOnce();
-   }
+   } // end for
    delay(200);
- }
+ } // end flashLedBattery
  
  void processBattery() {
    if (batteryVoltage() < BATTERY_MIN_VOLTAGE) {
      stopWorking();
-   }
- }
+   } // end if
+ } // end processBattery
  
- // Аварийное засыпание передатчика
  void stopWorking() {
    flashLedBattery(7);
    digitalWrite(PIN_BATTERY_LED, 0);
@@ -516,7 +540,7 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    delay(5000);
    
    esp_deep_sleep_start();
- }
+ } // end stopWorking
  
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
@@ -525,34 +549,30 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
  
  #ifdef DEBUG_ENABLE
    Serial.begin(115200);
-   while (!Serial);
+   while (!Serial); // end while
  #endif
  
    DEBUGln("================================");
    DEBUGln("=========== START TX ===========");
  
-   // Загружаем настройки из энергонезависимой памяти
    loadConfig();
  
-   // Настройка питания периферии и делителя АЦП
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH);
    pinMode(PIN_ADC_CTRL, OUTPUT);
    digitalWrite(PIN_ADC_CTRL, HIGH);
  
-   // Инициализация рабочих пинов
    pinMode(PIN_BUTTON, INPUT_PULLUP);
+   pinMode(PIN_USER, INPUT_PULLUP); // Инициализация кнопки USER
    pinMode(PIN_FB_LED, OUTPUT);
    pinMode(PIN_BIG_LED, OUTPUT);
    pinMode(PIN_BATTERY_LED, OUTPUT);
    
-   // Принудительный сброс состояний
    digitalWrite(PIN_FB_LED, 0);
    analogWrite(PIN_BIG_LED, 0);
    digitalWrite(PIN_BATTERY_LED, 0);
    delay(300);
  
-   // Приветственный сигнал (Стартовая проверка)
    updateStatusLed(true);
    analogWrite(PIN_BIG_LED, pwmledBrightness);
    digitalWrite(PIN_FB_LED, HIGH);
@@ -564,11 +584,10 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
    digitalWrite(PIN_BATTERY_LED, LOW);
    delay(1000);
  
-   // Замер батареи перед переходом в боевой режим
    DEBUGln(F("Battery Test"));
    if (measurebattery) {
      measurebattery = testBattery();
-   }
+   } // end if
    
    if (measurebattery) {
      DEBUGln(F("-Measuring"));
@@ -582,67 +601,64 @@ unsigned long prepModeTimer = 0;        // Таймер 10 секунд для �
      DEBUGln(F("-Cancelled"));
      showNoBattery();
      delay(500);
-   }
+   } // end if
  
-   // Запуск шины SPI для радиомодуля
    SPI.begin(sckPin, misoPin, mosiPin, csPin);
    
    workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
    DEBUG("LoRa begin on ");
    DEBUGln(workFrequency);
    
-   // Инициализация SX1262
    int state = radio.begin(workFrequency / 1000000.0);
    if (state != RADIOLIB_ERR_NONE) {
      DEBUGln("LoRa init failed. Code: " + String(state));
      while (true) {
        flashStatusLed(6);
        delay(4000);
-     }
-   }
+     } // end while
+   } // end if
  
    setLoRaParams();
  
-   // Подключение аппаратного прерывания (чтобы слушать ответы от RX)
    radio.setDio1Action(setFlag);
    radio.startReceive();
    delay(100);
  
    DEBUGln("DavayLoRa TX setup complete, waiting for 1-st buttonpress");
- }
+ } // end setup
  
-
  void loop() {
-  checkReceive(); 
-  
-  if ((millis() - lastButtonTime) > DEBOUNCE_TIME) {
-    processButton();
-  }
-  
-  // Логика перехода в режим подготовки (удержание 10 сек в нормальном режиме)
-  if (currentState == STATE_NORMAL && currButtonState) {
-    if (millis() - buttonPressStartTime > 10000) {
-      DEBUGln(F("Enter Preparation Mode!"));
-      currentState = STATE_PREPARATION;
-      prepModeTimer = millis(); // Запускаем таймер бездействия
-      
-      // Выключаем рабочий сигнал, если он был отправлен
-      sendMessage(CMD_SIGNAL, false); 
-      updateBIGLed(false);
-      
-      // Искусственно сбрасываем состояние кнопки, чтобы не отправлять лишних команд
-      buttonPressedFirstTime = false; 
-    }
-  }
-
-  // Маршрутизация стейт-машины
-  if (currentState == STATE_NORMAL) {
-    processPing();
-  } else if (currentState == STATE_PREPARATION) {
-    processPreparationMode();
-  }
-  
-  EVERY_MS(BATTERY_PERIOD) {
-    if (measurebattery) processBattery();
-  }
-}
+   checkReceive(); 
+   
+   if ((millis() - lastButtonTime) > DEBOUNCE_TIME) {
+     processButton();
+   } // end if
+   
+   processUserButton(); // Проверка 5-секундного удержания кнопки USER
+   
+   if (currentState == STATE_NORMAL && currButtonState) {
+     if (millis() - buttonPressStartTime > 10000) {
+       DEBUGln(F("Enter Preparation Mode!"));
+       currentState = STATE_PREPARATION;
+       prepModeTimer = millis(); 
+       prepClickCount = 0;
+       
+       sendMessage(CMD_SIGNAL, false); 
+       updateBIGLed(false);
+       
+       buttonPressedFirstTime = false; 
+     } // end if
+   } // end if
+ 
+   if (currentState == STATE_NORMAL) {
+     processPing();
+   } else if (currentState == STATE_PREPARATION) {
+     processPreparationMode();
+   } // end if
+   
+   EVERY_MS(BATTERY_PERIOD) {
+     if (measurebattery) {
+       processBattery();
+     } // end if
+   } // end EVERY_MS
+ } // end loop
