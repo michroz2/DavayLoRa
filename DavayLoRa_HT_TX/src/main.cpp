@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.3 (Изменение: Засыпание системы по 5-секундному удержанию кнопки USER)
+ * @version 1.4 (Изменение: Индикация сна и период проверки батареи вынесены в NVS)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -19,6 +19,8 @@
  unsigned long pingTimeout = 3000;     
  unsigned long bigTimeout = 3600000;   
  bool measurebattery = true;           
+ unsigned long batteryPeriod = 300000;    // Периодичность проверки батареи (мс)
+ unsigned long sleepLedDuration = 2000;   // Длительность свечения диода перед сном (мс)
  
  // Пороги индикации заряда батареи (в Вольтах)
  #define BATTERY_MIN_VOLTAGE 3.5
@@ -27,8 +29,6 @@
  #define BATTERY_VOLTAGE_3 3.8
  #define BATTERY_VOLTAGE_4 3.9
  #define BATTERY_VOLTAGE_5 4.0
- 
- #define BATTERY_PERIOD 300000         // 5 минут
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ (HELTEC WSL V3) =======================
  
@@ -172,6 +172,9 @@
    pingTimeout = preferences.getULong("pingTimeout", 3000);
    bigTimeout = preferences.getULong("bigTimeout", 3600000);
    
+   batteryPeriod = preferences.getULong("batPeriod", 300000);
+   sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
+   
    preferences.end();
    DEBUGln(F("Config loaded."));
  } // end loadConfig
@@ -186,6 +189,9 @@
    preferences.putInt("fbLedBright", fbledBrightness);
    preferences.putULong("pingTimeout", pingTimeout);
    preferences.putULong("bigTimeout", bigTimeout);
+   
+   preferences.putULong("batPeriod", batteryPeriod);
+   preferences.putULong("sleepLedDur", sleepLedDuration);
    
    preferences.end();
    DEBUGln(F("Config saved."));
@@ -296,12 +302,11 @@
  
  // ======================= БИЗНЕС-ЛОГИКА (КНОПКА И ПИНГ) =======================
  
- // Вынесенная логика усыпления системы
  void sleepSystem() {
    if (commSession(CMD_SLEEP, 1, CMD_SLEEP_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
       DEBUGln(F("RX is sleeping, TX going to sleep too"));
       updateStatusLed(true);
-      delay(2000);
+      delay(sleepLedDuration); // Изменение: настраиваемая длительность индикации
       updateStatusLed(false);
       
       esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0); 
@@ -400,20 +405,19 @@
    } // end if
  } // end processPing
  
- // Обработка встроенной кнопки USER
  void processUserButton() {
    static unsigned long userButtonTimer = 0;
    
-   if (digitalRead(PIN_USER) == LOW) { // Кнопка зажата (замыкание на GND)
+   if (digitalRead(PIN_USER) == LOW) { 
      if (userButtonTimer == 0) {
-       userButtonTimer = millis(); // Фиксируем начало нажатия
+       userButtonTimer = millis();
      } else if (millis() - userButtonTimer > 5000) {
        DEBUGln(F("USER button held 5s -> Centralized SLEEP"));
-       sleepSystem(); // Используем ту же логику усыпления обеих плат
-       userButtonTimer = 0; // Сброс таймера (если связь с RX прервалась и сон отменился)
+       sleepSystem(); 
+       userButtonTimer = 0; 
      } // end if
    } else {
-     userButtonTimer = 0; // Кнопка отпущена
+     userButtonTimer = 0; 
    } // end if
  } // end processUserButton
  
@@ -563,7 +567,7 @@
    digitalWrite(PIN_ADC_CTRL, HIGH);
  
    pinMode(PIN_BUTTON, INPUT_PULLUP);
-   pinMode(PIN_USER, INPUT_PULLUP); // Инициализация кнопки USER
+   pinMode(PIN_USER, INPUT_PULLUP); 
    pinMode(PIN_FB_LED, OUTPUT);
    pinMode(PIN_BIG_LED, OUTPUT);
    pinMode(PIN_BATTERY_LED, OUTPUT);
@@ -634,7 +638,7 @@
      processButton();
    } // end if
    
-   processUserButton(); // Проверка 5-секундного удержания кнопки USER
+   processUserButton(); 
    
    if (currentState == STATE_NORMAL && currButtonState) {
      if (millis() - buttonPressStartTime > 10000) {
@@ -656,7 +660,7 @@
      processPreparationMode();
    } // end if
    
-   EVERY_MS(BATTERY_PERIOD) {
+   EVERY_MS(batteryPeriod) {
      if (measurebattery) {
        processBattery();
      } // end if
