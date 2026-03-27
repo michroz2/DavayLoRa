@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.7 (Исправление: Утечки тока VEXT, Boot Loop 2-х секунд и RTC Pullup)
+ * @version 1.9 (Исправление: Сброс флага receivedFlag после отправки для игнорирования TxDone)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -223,6 +223,10 @@
    } // end if
    
    lastSendTime = millis();
+   
+   // Игнорируем прерывание TxDone, которое только что подняло этот флаг
+   receivedFlag = false; 
+   
    radio.startReceive(); 
  } // end sendMessage
  
@@ -309,13 +313,13 @@
  void enterDeepSleep() {
    DEBUGln(F("Preparing Hardware for Deep Sleep..."));
    
-   // 1. Аппаратно обесточиваем периферию (HIGH = OFF на Heltec V3)
+   radio.sleep();
+   
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH); 
    pinMode(PIN_ADC_CTRL, OUTPUT);
    digitalWrite(PIN_ADC_CTRL, HIGH);
    
-   // 2. Гарантированно гасим все светодиоды
    pinMode(PIN_FB_LED, OUTPUT);
    digitalWrite(PIN_FB_LED, LOW);
    pinMode(PIN_BIG_LED, OUTPUT);
@@ -323,7 +327,6 @@
    pinMode(PIN_BATTERY_LED, OUTPUT);
    digitalWrite(PIN_BATTERY_LED, LOW);
    
-   // 3. Ждем физического отпускания кнопки, чтобы избежать Boot Loop
    DEBUGln(F("Waiting for button release to sleep..."));
    while (digitalRead(PIN_BUTTON) == LOW) {
      delay(50);
@@ -331,7 +334,6 @@
    
    DEBUGln(F("Good night!"));
    
-   // 4. Принудительно включаем Pull-Up для RTC-домена во время сна
    rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
    rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
    
@@ -629,19 +631,15 @@
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
-   // 1. Инициализируем пины ввода-вывода В ПЕРВУЮ ОЧЕРЕДЬ, до паузы
    pinMode(PIN_BUTTON, INPUT_PULLUP);
    pinMode(PIN_USER, INPUT_PULLUP); 
    pinMode(PIN_FB_LED, OUTPUT);
    digitalWrite(PIN_FB_LED, LOW);
  
-   // 2. Инициализация памяти NVS
    loadConfig();
    
-   // 3. Запуск проверки на случайное пробуждение (работает мгновенно)
    runWakeUpProtection(PIN_BUTTON);
  
-   // 4. Пауза перенесена сюда. Выполняется ТОЛЬКО если старт был легитимным
    delay(2000);
  
  #ifdef DEBUG_ENABLE
