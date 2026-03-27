@@ -1,11 +1,12 @@
 /**
  * @file main.cpp (RX)
- * @version 1.6 (Изменение: Индикация сна и период проверки батареи вынесены в NVS)
+ * @version 1.9 (Исправление: Утечки тока VEXT, Boot Loop 2-х секунд и RTC Pullup)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
  #include <Arduino.h>
  #include <esp_sleep.h>
+ #include <driver/rtc_io.h>
  #include <SPI.h>
  #include <RadioLib.h>
  #include <Preferences.h>
@@ -18,14 +19,17 @@
  int buzzerVolume = 255;               
  unsigned long cutoffTime = 2000;      
  bool measurebattery = true;           
- unsigned long batteryPeriod = 300000;    // Периодичность проверки батареи (мс)
- unsigned long sleepLedDuration = 2000;   // Длительность свечения диода перед сном (мс)
+ unsigned long batteryPeriod = 300000;    
+ unsigned long sleepLedDuration = 2000;   
+ 
+ // Переменные для защиты от случайного включения
+ unsigned long wakeUpHoldTime = 2000;     
+ unsigned long wakeUpReleaseWindow = 2000; 
  
  // Настройки активной периферии
  bool enableBigLed = true;             
  bool enableBuzzer = false;            
  
- // Настройки надежности связи (Константы)
  #define PING_TIMEOUT 5000             
  
  // Пороги индикации заряда батареи (в Вольтах)
@@ -38,23 +42,19 @@
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ (HELTEC WSL V3) =======================
  
- // --- Исполнительные пины ---
  #define PIN_SIGNAL_LED      41     
  #define PIN_SIGNAL_BUZZERS  42     
  #define PIN_REED            7      
- #define PIN_USER            0      // Встроенная кнопка PRG/USER на плате Heltec
+ #define PIN_USER            0      
  
- // --- Индикация (Встроенный LED) ---
  #define PIN_STATUS_LED      35     
  #define PIN_BATTERY_LED     35     
  
- // --- Пины измерения батареи ---
  #define PIN_BATTERY_INTERNAL 1     
  #define PIN_VEXT 36                
  #define PIN_ADC_CTRL 37            
  #define HELTEC_BATTERY_MULTIPLIER 4.9 
  
- // --- Пины аппаратной шины SPI и радиомодуля SX1262 ---
  const int sckPin = 9;
  const int misoPin = 11;
  const int mosiPin = 10;
@@ -122,6 +122,8 @@
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
  void saveConfig();
+ void enterDeepSleep();
+ void runWakeUpProtection(uint8_t wakeupPin);
  void processTimeOut();
  void processCommand();
  void processSignal();
@@ -163,6 +165,9 @@
    batteryPeriod = preferences.getULong("batPeriod", 300000);
    sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
    
+   wakeUpHoldTime = preferences.getULong("wkUpHold", 2000);
+   wakeUpReleaseWindow = preferences.getULong("wkUpRel", 2000);
+   
    preferences.end();
    DEBUGln(F("Config loaded."));
  } // end loadConfig
@@ -182,6 +187,9 @@
    
    preferences.putULong("batPeriod", batteryPeriod);
    preferences.putULong("sleepLedDur", sleepLedDuration);
+   
+   preferences.putULong("wkUpHold", wakeUpHoldTime);
+   preferences.putULong("wkUpRel", wakeUpReleaseWindow);
    
    preferences.end();
    DEBUGln(F("Config saved."));
@@ -264,20 +272,89 @@
    DEBUGln(F("=== onReceive done ==="));
  } // end onReceive
  
- // ======================= БИЗНЕС-ЛОГИКА (УПРАВЛЕНИЕ ПЕРИФЕРИЕЙ) =======================
+ // ======================= БИЗНЕС-ЛОГИКА (СОН И ПЕРИФЕРИЯ) =======================
+ 
+ void enterDeepSleep() {
+   DEBUGln(F("Preparing Hardware for Deep Sleep..."));
+   
+   // 1. Аппаратно обесточиваем периферию (HIGH = OFF на Heltec V3)
+   pinMode(PIN_VEXT, OUTPUT);
+   digitalWrite(PIN_VEXT, HIGH);
+   pinMode(PIN_ADC_CTRL, OUTPUT);
+   digitalWrite(PIN_ADC_CTRL, HIGH);
+   
+   // 2. Гарантированно гасим все светодиоды и баззеры
+   pinMode(PIN_STATUS_LED, OUTPUT);
+   digitalWrite(PIN_STATUS_LED, LOW);
+   pinMode(PIN_SIGNAL_LED, OUTPUT);
+   digitalWrite(PIN_SIGNAL_LED, LOW);
+   pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
+   digitalWrite(PIN_SIGNAL_BUZZERS, LOW);
+   
+   // 3. Ждем физического отпускания магнита/геркона
+   DEBUGln(F("Waiting for magnet release to sleep..."));
+   while (digitalRead(PIN_REED) == LOW) {
+     delay(50);
+   } // end while
+   
+   DEBUGln(F("Good night!"));
+   
+   // 4. Принудительно включаем Pull-Up для RTC-домена во время сна
+   rtc_gpio_pullup_en((gpio_num_t)PIN_REED);
+   rtc_gpio_pulldown_dis((gpio_num_t)PIN_REED);
+   
+   esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_REED, 0);
+   esp_deep_sleep_start();
+ } // end enterDeepSleep
+ 
+ void runWakeUpProtection(uint8_t wakeupPin) {
+   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+   
+   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+     DEBUGln(F("Wakeup from EXT0. Checking protection..."));
+     updateStatusLed(true);
+     
+     unsigned long startHold = millis();
+     
+     while (millis() - startHold < wakeUpHoldTime) {
+       if (digitalRead(wakeupPin) == HIGH) { 
+         DEBUGln(F("Released too early -> Sleep"));
+         updateStatusLed(false);
+         enterDeepSleep();
+       } // end if
+       delay(10);
+     } // end while
+     
+     unsigned long startReleaseWindow = millis();
+     bool releasedInWindow = false;
+     
+     while (millis() - startReleaseWindow < wakeUpReleaseWindow) {
+       updateStatusLed((millis() % 200) < 100); 
+       
+       if (digitalRead(wakeupPin) == HIGH) {
+         DEBUGln(F("Released in window -> WAKE UP OK!"));
+         releasedInWindow = true;
+         break;
+       } // end if
+       delay(10);
+     } // end while
+     
+     if (!releasedInWindow) {
+       DEBUGln(F("Not released in window -> Sleep"));
+       updateStatusLed(false);
+       enterDeepSleep();
+     } // end if
+     
+     updateStatusLed(false); 
+   } // end if
+ } // end runWakeUpProtection
  
  void goToSleep() {
-   // Изменение: Идентичная индикация сна как на TX
    updateStatusLed(true);
    delay(sleepLedDuration);
    updateStatusLed(false);
    
-   analogWrite(PIN_SIGNAL_LED, 0);
-   analogWrite(PIN_SIGNAL_BUZZERS, 0);
-   digitalWrite(PIN_STATUS_LED, 0);
-   
-   DEBUGln(F("Going to deep sleep..."));
-   esp_deep_sleep_start();
+   enterDeepSleep();
  } // end goToSleep
  
  void processTimeOut() {
@@ -497,12 +574,25 @@
    flashLedBattery(7);
    digitalWrite(PIN_BATTERY_LED, 0);
    
-   esp_deep_sleep_start();
+   enterDeepSleep();
  } // end stopWorking
  
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
+   // 1. Инициализируем пины ввода-вывода В ПЕРВУЮ ОЧЕРЕДЬ, до паузы
+   pinMode(PIN_REED, INPUT_PULLUP);
+   pinMode(PIN_USER, INPUT_PULLUP); 
+   pinMode(PIN_STATUS_LED, OUTPUT);
+   digitalWrite(PIN_STATUS_LED, LOW);
+ 
+   // 2. Инициализация памяти NVS
+   loadConfig();
+   
+   // 3. Запуск проверки на случайное пробуждение (работает мгновенно)
+   runWakeUpProtection(PIN_REED);
+ 
+   // 4. Пауза перенесена сюда. Выполняется ТОЛЬКО если старт был легитимным
    delay(2000);
  
  #ifdef DEBUG_ENABLE
@@ -513,19 +603,13 @@
    DEBUGln(F("================================"));
    DEBUGln(F("=========== START RX ==========="));
  
-   loadConfig();
- 
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH);     
    pinMode(PIN_ADC_CTRL, OUTPUT);
    digitalWrite(PIN_ADC_CTRL, HIGH); 
  
-   pinMode(PIN_STATUS_LED, OUTPUT);
    pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
    pinMode(PIN_SIGNAL_LED, OUTPUT);
-   
-   pinMode(PIN_REED, INPUT_PULLUP);
-   pinMode(PIN_USER, INPUT_PULLUP); 
    
    analogWrite(PIN_SIGNAL_LED, 0);
    analogWrite(PIN_SIGNAL_BUZZERS, 0);
