@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.9 (Исправление: Сброс флага receivedFlag после отправки для игнорирования TxDone)
+ * @version 1.14 (Изменение: Добавлена переменная pingTimeoutRX в NVS для будущего портала)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -18,6 +18,7 @@
  int pwmledBrightness = 35;            
  int fbledBrightness = 255;            
  unsigned long pingTimeout = 3000;     
+ unsigned long pingTimeoutRX = 9000;   // Таймаут для RX (храним для настройки через Captive Portal)
  unsigned long bigTimeout = 3600000;   
  bool measurebattery = true;           
  unsigned long batteryPeriod = 300000;    
@@ -168,6 +169,7 @@
    pwmledBrightness = preferences.getInt("bigLedBright", 35);
    fbledBrightness = preferences.getInt("fbLedBright", 255);
    pingTimeout = preferences.getULong("pingTimeout", 3000);
+   pingTimeoutRX = preferences.getULong("pingRx", 9000); 
    bigTimeout = preferences.getULong("bigTimeout", 3600000);
    
    batteryPeriod = preferences.getULong("batPeriod", 300000);
@@ -189,6 +191,7 @@
    preferences.putInt("bigLedBright", pwmledBrightness);
    preferences.putInt("fbLedBright", fbledBrightness);
    preferences.putULong("pingTimeout", pingTimeout);
+   preferences.putULong("pingRx", pingTimeoutRX); 
    preferences.putULong("bigTimeout", bigTimeout);
    
    preferences.putULong("batPeriod", batteryPeriod);
@@ -314,6 +317,15 @@
    DEBUGln(F("Preparing Hardware for Deep Sleep..."));
    
    radio.sleep();
+   
+   SPI.end();
+   pinMode(csPin, INPUT);
+   pinMode(mosiPin, INPUT);
+   pinMode(misoPin, INPUT);
+   pinMode(sckPin, INPUT);
+   pinMode(resetPin, INPUT);
+   pinMode(busyPin, INPUT);
+   pinMode(irqPin, INPUT);
    
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH); 
@@ -751,3 +763,4 @@
      } // end if
    } // end EVERY_MS
  } // end loop
+ 

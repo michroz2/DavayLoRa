@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.11 (Исправление: Сброс флага receivedFlag после отправки для игнорирования TxDone)
+ * @version 1.14 (Изменение: pingTimeout вынесен в NVS)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -18,6 +18,7 @@
  int pwmledBrightness = 35;            
  int buzzerVolume = 255;               
  unsigned long cutoffTime = 2000;      
+ unsigned long pingTimeout = 9000;     // Таймаут для приема пинга вынесен в NVS
  bool measurebattery = true;           
  unsigned long batteryPeriod = 300000;    
  unsigned long sleepLedDuration = 2000;   
@@ -29,8 +30,6 @@
  // Настройки активной периферии
  bool enableBigLed = true;             
  bool enableBuzzer = false;            
- 
- #define PING_TIMEOUT 5000             
  
  // Пороги индикации заряда батареи (в Вольтах)
  #define BATTERY_MIN_VOLTAGE 3.5
@@ -158,6 +157,7 @@
    pwmledBrightness = preferences.getInt("bigLedBright", 35);
    buzzerVolume = preferences.getInt("buzzerVol", 255);
    cutoffTime = preferences.getULong("cutoffTime", 2000);
+   pingTimeout = preferences.getULong("pingTimeout", 9000);
    
    enableBigLed = preferences.getBool("enBigLed", true);
    enableBuzzer = preferences.getBool("enBuzzer", false);
@@ -181,6 +181,7 @@
    preferences.putInt("bigLedBright", pwmledBrightness);
    preferences.putInt("buzzerVol", buzzerVolume);
    preferences.putULong("cutoffTime", cutoffTime);
+   preferences.putULong("pingTimeout", pingTimeout);
    
    preferences.putBool("enBigLed", enableBigLed);
    preferences.putBool("enBuzzer", enableBuzzer);
@@ -283,6 +284,15 @@
    
    radio.sleep();
    
+   SPI.end();
+   pinMode(csPin, INPUT);
+   pinMode(mosiPin, INPUT);
+   pinMode(misoPin, INPUT);
+   pinMode(sckPin, INPUT);
+   pinMode(resetPin, INPUT);
+   pinMode(busyPin, INPUT);
+   pinMode(irqPin, INPUT);
+   
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH);
    pinMode(PIN_ADC_CTRL, OUTPUT);
@@ -360,7 +370,7 @@
  } // end goToSleep
  
  void processTimeOut() {
-   if ((millis() - pingTimeOutLastTime) > PING_TIMEOUT) {
+   if ((millis() - pingTimeOutLastTime) > pingTimeout) {
      DEBUGln(F("ZZZZZZZ"));
      signalStatus = false;
      pingTimeOutLastTime = millis();
