@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.20 (Изменение: Синхронизация версии с TX - включение  Captive portal)
+ * @version 1.24 (Изменение: Версия в логе загрузки)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -674,7 +674,7 @@
  #endif
  
    DEBUGln(F("================================"));
-   DEBUGln(F("=========== START RX ==========="));
+   DEBUGln(F("=========== START RX v1.24 ==========="));
  
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH);     

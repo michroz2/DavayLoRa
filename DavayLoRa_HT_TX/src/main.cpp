@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.23 (Изменение: Добавлены все настройки (TX+RX) в NVS и Web UI)
+ * @version 1.24 (Изменение: Вывод версии в лог, таймер и обработка кнопки Отмена)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -162,6 +162,7 @@
  
  bool isWifiActive = false;
  unsigned long wifiStartTime = 0;
+ bool exitConfigRequested = false;
  
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
@@ -196,6 +197,7 @@
  void stopWiFiPortal();
  void handleRoot();
  void handleSave();
+ void handleCancel();
  
  // ======================= РАБОТА С ПАМЯТЬЮ NVS =======================
  
@@ -373,6 +375,11 @@
  void handleRoot() {
    String html = String(index_html);
    
+   // Считаем оставшееся время для скрипта на странице (в секундах)
+   unsigned long elapsed = millis() - wifiStartTime;
+   long remainingSec = (configTimeout > elapsed) ? (configTimeout - elapsed) / 1000 : 0;
+   html.replace("%TIME_LEFT%", String(remainingSec));
+ 
    // Общие
    html.replace("%ADDR%", String(workAddress));
    html.replace("%BAT_CHK%", measurebattery ? "checked" : "");
@@ -430,9 +437,16 @@
    // Сохраняем в память
    saveConfig();
    
-   String response = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:50px;} h2{color:#4CAF50;} a{color:#4CAF50; text-decoration:none; font-size:18px; border:1px solid #4CAF50; padding:10px 20px; border-radius:5px; display:inline-block; margin-top:20px;}</style></head><body><h2>✅ Настройки сохранены!</h2><p>Они записаны в память пульта.</p><p style='color:#aaa; font-size:14px; margin-top:30px;'>Для выхода в рабочий режим сделайте двойной клик кнопкой пульта.</p><br><a href='/'>Вернуться назад</a></body></html>";
+   String response = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:50px;} h2{color:#4CAF50;} a{color:#4CAF50; text-decoration:none; font-size:18px; border:1px solid #4CAF50; padding:10px 20px; border-radius:5px; display:inline-block; margin-top:20px;}</style></head><body><h2>✅ Настройки сохранены!</h2><p>Они записаны в память пульта.</p><p style='color:#aaa; font-size:14px; margin-top:30px;'>Для выхода в рабочий режим сделайте двойной клик кнопкой пульта или нажмите Отмена.</p><br><a href='/'>Вернуться назад</a></body></html>";
    server.send(200, "text/html", response);
  } // end handleSave
+ 
+ void handleCancel() {
+   DEBUGln(F("Received Cancel Request"));
+   String response = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:50px;} h2{color:#f44336;}</style></head><body><h2>🚪 Выход из настроек...</h2><p>Интерфейс закрыт. Пульт возвращается в рабочий режим.</p></body></html>";
+   server.send(200, "text/html", response);
+   exitConfigRequested = true; // Взводим флаг для выхода
+ } // end handleCancel
  
  void startWiFiPortal() {
    DEBUGln(F("Starting WiFi AP..."));
@@ -448,6 +462,7 @@
    
    server.on("/", HTTP_GET, handleRoot);
    server.on("/save", HTTP_POST, handleSave);
+   server.on("/cancel", HTTP_GET, handleCancel);
    
    server.onNotFound([]() {
      server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString(), true);
@@ -894,7 +909,7 @@
  #endif
  
    DEBUGln("================================");
-   DEBUGln("=========== START TX ===========");
+   DEBUGln("=========== START TX v1.24 ===========");
  
    pinMode(PIN_VEXT, OUTPUT);
    digitalWrite(PIN_VEXT, HIGH);
@@ -993,13 +1008,22 @@
      processConfigStandby();
    } // end if
    
-   // Обработка работы веб-сервера
    if (isWifiActive) {
      dnsServer.processNextRequest();
      server.handleClient();
      
-     // Проверка таймаута конфигурации (теперь он настраивается юзером!)
-     if (millis() - wifiStartTime > configTimeout) {
+     // Обработка ручной отмены из Web UI
+     if (exitConfigRequested) {
+       delay(500); // Даем время ESP32 протолкнуть HTTP-ответ браузеру перед убийством WiFi
+       exitConfigRequested = false;
+       DEBUGln(F("Web UI Cancel! Reverting to NORMAL."));
+       stopWiFiPortal();
+       commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
+       currentState = STATE_NORMAL;
+       updateStatusLed(false);
+     } 
+     // Обработка автоматического таймаута
+     else if (millis() - wifiStartTime > configTimeout) {
        DEBUGln(F("WiFi Timeout! Reverting to NORMAL."));
        stopWiFiPortal();
        commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);

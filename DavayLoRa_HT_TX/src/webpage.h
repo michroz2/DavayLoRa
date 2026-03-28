@@ -1,6 +1,6 @@
 /**
  * @file webpage.h
- * @version 1.23 (Изменение: Добавлены 3 группы настроек: Общие, TX, RX)
+ * @version 1.24 (Изменение: Добавлен таймер и кнопка Отмена)
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
@@ -18,7 +18,8 @@
    <title>DavayLoRa Config</title>
    <style>
      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; padding: 15px; max-width: 600px; margin: 0 auto; }
-     h2 { text-align: center; color: #4CAF50; margin-bottom: 20px; font-size: 24px;}
+     h2 { text-align: center; color: #4CAF50; margin-bottom: 10px; font-size: 24px;}
+     .timer { text-align: center; color: #ff9800; font-size: 18px; margin-bottom: 20px; font-weight: bold; }
      fieldset { border: 1px solid #4CAF50; border-radius: 8px; margin-bottom: 25px; padding: 20px; background: #1e1e1e; }
      legend { color: #4CAF50; font-weight: bold; font-size: 18px; padding: 0 10px; }
      label { display: block; margin-top: 15px; margin-bottom: 5px; color: #cccccc; font-size: 14px; }
@@ -27,12 +28,34 @@
      .checkbox-container { display: flex; align-items: center; margin-top: 15px; background: #2a2a2a; padding: 12px; border-radius: 6px; }
      input[type="checkbox"] { transform: scale(1.5); margin: 0 10px 0 5px; accent-color: #4CAF50; }
      .checkbox-container span { font-size: 15px; color: #fff; }
-     input[type="submit"] { background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; margin-top: 10px; margin-bottom: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+     .buttons-container { display: flex; gap: 10px; margin-bottom: 30px; margin-top: 10px; }
+     input[type="submit"] { flex: 2; background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
      input[type="submit"]:hover { background-color: #45a049; }
+     .cancel-btn { flex: 1; background-color: #f44336; color: white; text-decoration: none; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+     .cancel-btn:hover { background-color: #d32f2f; }
    </style>
+   <script>
+     let timeLeft = %TIME_LEFT%;
+     function updateTimer() {
+       if (timeLeft <= 0) {
+         document.getElementById('timeDisplay').innerText = "00:00";
+         alert("⏳ Время конфигурации истекло! Пульт возвращается в рабочий режим.");
+         window.location.reload();
+         return;
+       }
+       let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+       let s = (timeLeft % 60).toString().padStart(2, '0');
+       document.getElementById('timeDisplay').innerText = m + ":" + s;
+       timeLeft--;
+       setTimeout(updateTimer, 1000);
+     }
+     window.onload = updateTimer;
+   </script>
  </head>
  <body>
    <h2>⚙️ Настройка DavayLoRa</h2>
+   <div class="timer">⏳ Осталось времени: <span id="timeDisplay">--:--</span></div>
+   
    <form action="/save" method="POST">
      
      <fieldset>
@@ -102,7 +125,10 @@
        <input type="number" name="pingTimeoutRX" value="%RX_PING%" min="1000" step="100" required>
      </fieldset>
  
-     <input type="submit" value="💾 Сохранить настройки">
+     <div class="buttons-container">
+       <input type="submit" value="💾 Сохранить">
+       <a href="/cancel" class="cancel-btn">❌ Отмена</a>
+     </div>
    </form>
  </body>
  </html>
