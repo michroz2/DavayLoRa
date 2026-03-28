@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.16 (Исправление: Убрана системная ошибка Incorrect wakeup source)
+ * @version 1.17 (Изменение: Добавлена стейт-машина и синхронная индикация CONFIG_STANDBY)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -92,6 +92,10 @@
  #define CMD_PING_OK        213
  #define CMD_SLEEP          214
  #define CMD_SLEEP_OK       215
+ #define CMD_CONFIG         216
+ #define CMD_CONFIG_OK      217
+ #define CMD_NORMAL_MODE    218
+ #define CMD_NORMAL_MODE_OK 219
  
  byte rcvAddress = 0;
  byte rcvCmd = 0;
@@ -113,6 +117,12 @@
  
  volatile bool receivedFlag = false;
  
+ enum SystemState {
+   STATE_NORMAL,
+   STATE_CONFIG
+ };
+ SystemState currentState = STATE_NORMAL;
+ 
  unsigned long workingFrequency[MAX_ADDRESS] = {
    434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
    434150000, 434270000, 433850000, 433730000, 433970000, 434060000, 434180000,
@@ -127,6 +137,7 @@
  void processTimeOut();
  void processCommand();
  void processSignal();
+ void processConfigLed();
  void processCutoff();
  void processUserButton();
  void goToSleep();
@@ -377,10 +388,17 @@
  
  void processTimeOut() {
    if ((millis() - pingTimeOutLastTime) > pingTimeout) {
-     DEBUGln(F("ZZZZZZZ"));
+     DEBUGln(F("ZZZZZZZ Timeout Triggered"));
      signalStatus = false;
      pingTimeOutLastTime = millis();
-     flashStatusLed(2); 
+     
+     if (currentState == STATE_NORMAL) {
+        flashStatusLed(2); 
+     } else if (currentState == STATE_CONFIG) {
+        DEBUGln(F("Config Keepalive lost -> Reverting to NORMAL"));
+        currentState = STATE_NORMAL;
+        updateStatusLed(false);
+     } // end if
    } // end if
  } // end processTimeOut
  
@@ -421,6 +439,26 @@
        goToSleep();
        break;
      } // end case CMD_SLEEP
+     
+     case CMD_CONFIG: {
+       DEBUGln(F("=== CMD_CONFIG ==="));
+       currentState = STATE_CONFIG;
+       pingTimeOutLastTime = millis();
+       sendMessage(rcvAddress, CMD_CONFIG_OK, 1);
+       
+       analogWrite(PIN_SIGNAL_LED, 0);
+       analogWrite(PIN_SIGNAL_BUZZERS, 0);
+       break;
+     } // end case CMD_CONFIG
+     
+     case CMD_NORMAL_MODE: {
+       DEBUGln(F("=== CMD_NORMAL_MODE ==="));
+       currentState = STATE_NORMAL;
+       pingTimeOutLastTime = millis();
+       updateStatusLed(false);
+       sendMessage(rcvAddress, CMD_NORMAL_MODE_OK, 1);
+       break;
+     } // end case CMD_NORMAL_MODE
    } // end switch
    rcvCmd = 0; 
  } // end processCommand
@@ -442,6 +480,16 @@
    
    digitalWrite(PIN_STATUS_LED, signalStatus);
  } // end processSignal
+ 
+ void processConfigLed() {
+   unsigned long t = millis() % 3600;
+   if (t < 100) { updateStatusLed(true); }
+   else if (t < 200) { updateStatusLed(false); }
+   else if (t < 300) { updateStatusLed(true); }
+   else if (t < 400) { updateStatusLed(false); }
+   else if (t < 500) { updateStatusLed(true); }
+   else { updateStatusLed(false); }
+ } // end processConfigLed
  
  void processCutoff() {
    if (signalStatus && (millis() - cutoffTimer > cutoffTime)) {
@@ -699,7 +747,11 @@
      processTimeOut(); 
    } // end if
  
-   processCutoff();
+   if (currentState == STATE_NORMAL) {
+     processCutoff();
+   } else if (currentState == STATE_CONFIG) {
+     processConfigLed();
+   } // end if
    
    processUserButton(); 
  
