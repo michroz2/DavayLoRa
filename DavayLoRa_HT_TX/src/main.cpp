@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.20 (Изменение: Добавлен запуск WiFi Captive Portal по 1 клику)
+ * @version 1.22 (Изменение: HTML-интерфейс вынесен в отдельный файл webpage.h)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -13,6 +13,9 @@
  #include <WiFi.h>
  #include <WebServer.h>
  #include <DNSServer.h>
+ 
+ // Подключаем наш файл с HTML-разметкой
+ #include "webpage.h" 
  
  Preferences preferences;
  
@@ -185,6 +188,8 @@
  void stopWorking();
  void startWiFiPortal();
  void stopWiFiPortal();
+ void handleRoot();
+ void handleSave();
  
  // ======================= РАБОТА С ПАМЯТЬЮ NVS =======================
  
@@ -341,6 +346,39 @@
  
  // ======================= WIFI & CAPTIVE PORTAL =======================
  
+ void handleRoot() {
+   String html = String(index_html);
+   
+   // Подставляем текущие значения в HTML
+   html.replace("%ADDR%", String(workAddress));
+   html.replace("%BIG_LED%", String(pwmledBrightness));
+   html.replace("%FB_LED%", String(fbledBrightness));
+   html.replace("%PING%", String(pingTimeout));
+   html.replace("%BAT_CHK%", measurebattery ? "checked" : "");
+   
+   server.send(200, "text/html", html);
+ } // end handleRoot
+ 
+ void handleSave() {
+   DEBUGln(F("Received Save Request"));
+   
+   // Считываем значения из полей формы
+   if (server.hasArg("workAddress")) workAddress = server.arg("workAddress").toInt();
+   if (server.hasArg("pwmledBrightness")) pwmledBrightness = server.arg("pwmledBrightness").toInt();
+   if (server.hasArg("fbledBrightness")) fbledBrightness = server.arg("fbledBrightness").toInt();
+   if (server.hasArg("pingTimeout")) pingTimeout = server.arg("pingTimeout").toInt();
+   
+   // Чекбокс передается только если он нажат
+   measurebattery = server.hasArg("measurebattery"); 
+ 
+   // Сохраняем в память
+   saveConfig();
+   
+   // Возвращаем страницу успешного сохранения
+   String response = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:50px;} h2{color:#4CAF50;} a{color:#4CAF50; text-decoration:none; font-size:18px; border:1px solid #4CAF50; padding:10px 20px; border-radius:5px; display:inline-block; margin-top:20px;}</style></head><body><h2>✅ Настройки сохранены!</h2><p>Они уже записаны в память пульта.</p><p style='color:#aaa; font-size:14px; margin-top:30px;'>Для выхода в рабочий режим сделайте двойной клик кнопкой пульта.</p><br><a href='/'>Вернуться назад</a></body></html>";
+   server.send(200, "text/html", response);
+ } // end handleSave
+ 
  void startWiFiPortal() {
    DEBUGln(F("Starting WiFi AP..."));
    WiFi.mode(WIFI_AP);
@@ -353,8 +391,14 @@
    
    dnsServer.start(DNS_PORT, "*", apIP);
    
+   // Роутинг веб-сервера
+   server.on("/", HTTP_GET, handleRoot);
+   server.on("/save", HTTP_POST, handleSave);
+   
+   // Это перехватывает все проверки наличия интернета от телефона и делает правильный редирект на 192.168.4.1
    server.onNotFound([]() {
-     server.send(200, "text/html", "<h1>DavayLoRa Config</h1><p>Captive Portal is working! Next step: adding the real web UI.</p>");
+     server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString(), true);
+     server.send(302, "text/plain", "");
    });
    
    server.begin();
