@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.17 (Изменение: Добавлен режим CONFIG_STANDBY, стейт-машина и синхронная индикация)
+ * @version 1.18 (Изменение: Добавлен выход из CONFIG_STANDBY при потере связи с RX)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -528,7 +528,12 @@
  
    if ((millis() - pingTimer) > pingTimeout) {
      if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
-       // Успешный keepalive
+       DEBUGln(F("Config Keepalive OK"));
+     } else {
+       DEBUGln(F("Config Keepalive FAILED! RX lost. Reverting to NORMAL."));
+       currentState = STATE_NORMAL;
+       updateStatusLed(false);
+       flashStatusLed(2); // Индикация ошибки связи
      } // end if
      pingTimer = millis(); 
    } // end if

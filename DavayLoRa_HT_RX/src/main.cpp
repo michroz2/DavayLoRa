@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.17 (Изменение: Добавлена стейт-машина и синхронная индикация CONFIG_STANDBY)
+ * @version 1.17, 1.18 (Изменение: Добавлена стейт-машина и синхронная индикация CONFIG_STANDBY)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
