@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.22 (Изменение: HTML-интерфейс вынесен в отдельный файл webpage.h)
+ * @version 1.23 (Изменение: Добавлены все настройки (TX+RX) в NVS и Web UI)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -14,26 +14,33 @@
  #include <WebServer.h>
  #include <DNSServer.h>
  
- // Подключаем наш файл с HTML-разметкой
  #include "webpage.h" 
  
  Preferences preferences;
  
- // ======================= ПОЛЬЗОВАТЕЛЬСКИЕ НАСТРОЙКИ (ИЗ ПАМЯТИ NVS) =======================
+ // ======================= ГРУППА 1: ОБЩИЕ НАСТРОЙКИ (COMMON) =======================
  byte workAddress = 4;                 
+ bool measurebattery = true;           
+ unsigned long batteryPeriod = 300000;    
+ unsigned long wakeUpHoldTime = 2000;     
+ unsigned long wakeUpReleaseWindow = 2000; 
+ unsigned long stuckSleepTime = 10000; 
+ unsigned long configTimeout = 600000; 
+ 
+ // ======================= ГРУППА 2: НАСТРОЙКИ TX =======================
  int pwmledBrightness = 35;            
  int fbledBrightness = 255;            
  unsigned long pingTimeout = 3000;     
- unsigned long pingTimeoutRX = 9000;   
  unsigned long bigTimeout = 3600000;   
- unsigned long stuckSleepTime = 10000; 
- bool measurebattery = true;           
- unsigned long batteryPeriod = 300000;    
  unsigned long sleepLedDuration = 2000;   
  
- // Переменные для защиты от случайного включения
- unsigned long wakeUpHoldTime = 2000;     
- unsigned long wakeUpReleaseWindow = 2000; 
+ // ======================= ГРУППА 3: НАСТРОЙКИ RX (Хранятся здесь для передачи) =======================
+ unsigned long pingTimeoutRX = 9000;   
+ bool rxEnableBigLed = true;
+ int rxPwmledBrightness = 35;
+ bool rxEnableBuzzer = false;
+ int rxBuzzerVolume = 255;
+ unsigned long rxCutoffTime = 2000;
  
  // Пороги индикации заряда батареи (в Вольтах)
  #define BATTERY_MIN_VOLTAGE 3.5
@@ -155,7 +162,6 @@
  
  bool isWifiActive = false;
  unsigned long wifiStartTime = 0;
- const unsigned long wifiTimeout = 600000; // 10 минут
  
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
@@ -197,21 +203,30 @@
    DEBUGln(F("Loading config from NVS..."));
    preferences.begin("davaylora", false); 
    
+   // Общие
    workAddress = preferences.getUChar("workAddress", 4);
    measurebattery = preferences.getBool("measureBat", true);
+   batteryPeriod = preferences.getULong("batPeriod", 300000);
+   wakeUpHoldTime = preferences.getULong("wkUpHold", 2000);
+   wakeUpReleaseWindow = preferences.getULong("wkUpRel", 2000);
+   stuckSleepTime = preferences.getULong("stuckSleep", 10000);
+   configTimeout = preferences.getULong("confTo", 600000);
+   
+   // TX
    pwmledBrightness = preferences.getInt("bigLedBright", 35);
    fbledBrightness = preferences.getInt("fbLedBright", 255);
    pingTimeout = preferences.getULong("pingTimeout", 3000);
-   pingTimeoutRX = preferences.getULong("pingRx", 9000); 
    bigTimeout = preferences.getULong("bigTimeout", 3600000);
-   stuckSleepTime = preferences.getULong("stuckSleep", 10000);
-   
-   batteryPeriod = preferences.getULong("batPeriod", 300000);
    sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
    
-   wakeUpHoldTime = preferences.getULong("wkUpHold", 2000);
-   wakeUpReleaseWindow = preferences.getULong("wkUpRel", 2000);
-   
+   // RX
+   pingTimeoutRX = preferences.getULong("pingRx", 9000); 
+   rxEnableBigLed = preferences.getBool("rxEnBigLed", true);
+   rxPwmledBrightness = preferences.getInt("rxBigBright", 35);
+   rxEnableBuzzer = preferences.getBool("rxEnBuzzer", false);
+   rxBuzzerVolume = preferences.getInt("rxBuzVol", 255);
+   rxCutoffTime = preferences.getULong("rxCutoff", 2000);
+ 
    preferences.end();
    DEBUGln(F("Config loaded."));
  } // end loadConfig
@@ -220,20 +235,29 @@
    DEBUGln(F("Saving config to NVS..."));
    preferences.begin("davaylora", false);
    
+   // Общие
    preferences.putUChar("workAddress", workAddress);
    preferences.putBool("measureBat", measurebattery);
+   preferences.putULong("batPeriod", batteryPeriod);
+   preferences.putULong("wkUpHold", wakeUpHoldTime);
+   preferences.putULong("wkUpRel", wakeUpReleaseWindow);
+   preferences.putULong("stuckSleep", stuckSleepTime);
+   preferences.putULong("confTo", configTimeout);
+   
+   // TX
    preferences.putInt("bigLedBright", pwmledBrightness);
    preferences.putInt("fbLedBright", fbledBrightness);
    preferences.putULong("pingTimeout", pingTimeout);
-   preferences.putULong("pingRx", pingTimeoutRX); 
    preferences.putULong("bigTimeout", bigTimeout);
-   preferences.putULong("stuckSleep", stuckSleepTime);
-   
-   preferences.putULong("batPeriod", batteryPeriod);
    preferences.putULong("sleepLedDur", sleepLedDuration);
    
-   preferences.putULong("wkUpHold", wakeUpHoldTime);
-   preferences.putULong("wkUpRel", wakeUpReleaseWindow);
+   // RX
+   preferences.putULong("pingRx", pingTimeoutRX); 
+   preferences.putBool("rxEnBigLed", rxEnableBigLed);
+   preferences.putInt("rxBigBright", rxPwmledBrightness);
+   preferences.putBool("rxEnBuzzer", rxEnableBuzzer);
+   preferences.putInt("rxBuzVol", rxBuzzerVolume);
+   preferences.putULong("rxCutoff", rxCutoffTime);
    
    preferences.end();
    DEBUGln(F("Config saved."));
@@ -349,33 +373,64 @@
  void handleRoot() {
    String html = String(index_html);
    
-   // Подставляем текущие значения в HTML
+   // Общие
    html.replace("%ADDR%", String(workAddress));
-   html.replace("%BIG_LED%", String(pwmledBrightness));
-   html.replace("%FB_LED%", String(fbledBrightness));
-   html.replace("%PING%", String(pingTimeout));
    html.replace("%BAT_CHK%", measurebattery ? "checked" : "");
-   
+   html.replace("%BAT_PER%", String(batteryPeriod));
+   html.replace("%WK_HOLD%", String(wakeUpHoldTime));
+   html.replace("%WK_REL%", String(wakeUpReleaseWindow));
+   html.replace("%STUCK_SL%", String(stuckSleepTime));
+   html.replace("%CONF_TO%", String(configTimeout));
+ 
+   // TX
+   html.replace("%TX_BIG_LED%", String(pwmledBrightness));
+   html.replace("%TX_FB_LED%", String(fbledBrightness));
+   html.replace("%TX_PING%", String(pingTimeout));
+   html.replace("%TX_BIG_TO%", String(bigTimeout));
+   html.replace("%TX_SLP_LED%", String(sleepLedDuration));
+ 
+   // RX
+   html.replace("%RX_BIG_EN%", rxEnableBigLed ? "checked" : "");
+   html.replace("%RX_BIG_LED%", String(rxPwmledBrightness));
+   html.replace("%RX_BUZ_EN%", rxEnableBuzzer ? "checked" : "");
+   html.replace("%RX_BUZ_VOL%", String(rxBuzzerVolume));
+   html.replace("%RX_CUTOFF%", String(rxCutoffTime));
+   html.replace("%RX_PING%", String(pingTimeoutRX));
+ 
    server.send(200, "text/html", html);
  } // end handleRoot
  
  void handleSave() {
    DEBUGln(F("Received Save Request"));
    
-   // Считываем значения из полей формы
+   // Считываем значения из полей (Общие)
    if (server.hasArg("workAddress")) workAddress = server.arg("workAddress").toInt();
+   measurebattery = server.hasArg("measurebattery"); 
+   if (server.hasArg("batteryPeriod")) batteryPeriod = server.arg("batteryPeriod").toInt();
+   if (server.hasArg("wakeUpHoldTime")) wakeUpHoldTime = server.arg("wakeUpHoldTime").toInt();
+   if (server.hasArg("wakeUpReleaseWindow")) wakeUpReleaseWindow = server.arg("wakeUpReleaseWindow").toInt();
+   if (server.hasArg("stuckSleepTime")) stuckSleepTime = server.arg("stuckSleepTime").toInt();
+   if (server.hasArg("configTimeout")) configTimeout = server.arg("configTimeout").toInt();
+ 
+   // Считываем значения из полей (TX)
    if (server.hasArg("pwmledBrightness")) pwmledBrightness = server.arg("pwmledBrightness").toInt();
    if (server.hasArg("fbledBrightness")) fbledBrightness = server.arg("fbledBrightness").toInt();
    if (server.hasArg("pingTimeout")) pingTimeout = server.arg("pingTimeout").toInt();
-   
-   // Чекбокс передается только если он нажат
-   measurebattery = server.hasArg("measurebattery"); 
+   if (server.hasArg("bigTimeout")) bigTimeout = server.arg("bigTimeout").toInt();
+   if (server.hasArg("sleepLedDuration")) sleepLedDuration = server.arg("sleepLedDuration").toInt();
+ 
+   // Считываем значения из полей (RX)
+   rxEnableBigLed = server.hasArg("rxEnableBigLed");
+   if (server.hasArg("rxPwmledBrightness")) rxPwmledBrightness = server.arg("rxPwmledBrightness").toInt();
+   rxEnableBuzzer = server.hasArg("rxEnableBuzzer");
+   if (server.hasArg("rxBuzzerVolume")) rxBuzzerVolume = server.arg("rxBuzzerVolume").toInt();
+   if (server.hasArg("rxCutoffTime")) rxCutoffTime = server.arg("rxCutoffTime").toInt();
+   if (server.hasArg("pingTimeoutRX")) pingTimeoutRX = server.arg("pingTimeoutRX").toInt();
  
    // Сохраняем в память
    saveConfig();
    
-   // Возвращаем страницу успешного сохранения
-   String response = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:50px;} h2{color:#4CAF50;} a{color:#4CAF50; text-decoration:none; font-size:18px; border:1px solid #4CAF50; padding:10px 20px; border-radius:5px; display:inline-block; margin-top:20px;}</style></head><body><h2>✅ Настройки сохранены!</h2><p>Они уже записаны в память пульта.</p><p style='color:#aaa; font-size:14px; margin-top:30px;'>Для выхода в рабочий режим сделайте двойной клик кнопкой пульта.</p><br><a href='/'>Вернуться назад</a></body></html>";
+   String response = "<html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:50px;} h2{color:#4CAF50;} a{color:#4CAF50; text-decoration:none; font-size:18px; border:1px solid #4CAF50; padding:10px 20px; border-radius:5px; display:inline-block; margin-top:20px;}</style></head><body><h2>✅ Настройки сохранены!</h2><p>Они записаны в память пульта.</p><p style='color:#aaa; font-size:14px; margin-top:30px;'>Для выхода в рабочий режим сделайте двойной клик кнопкой пульта.</p><br><a href='/'>Вернуться назад</a></body></html>";
    server.send(200, "text/html", response);
  } // end handleSave
  
@@ -391,11 +446,9 @@
    
    dnsServer.start(DNS_PORT, "*", apIP);
    
-   // Роутинг веб-сервера
    server.on("/", HTTP_GET, handleRoot);
    server.on("/save", HTTP_POST, handleSave);
    
-   // Это перехватывает все проверки наличия интернета от телефона и делает правильный редирект на 192.168.4.1
    server.onNotFound([]() {
      server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString(), true);
      server.send(302, "text/plain", "");
@@ -945,8 +998,8 @@
      dnsServer.processNextRequest();
      server.handleClient();
      
-     // Проверка 10-минутного таймаута
-     if (millis() - wifiStartTime > wifiTimeout) {
+     // Проверка таймаута конфигурации (теперь он настраивается юзером!)
+     if (millis() - wifiStartTime > configTimeout) {
        DEBUGln(F("WiFi Timeout! Reverting to NORMAL."));
        stopWiFiPortal();
        commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
