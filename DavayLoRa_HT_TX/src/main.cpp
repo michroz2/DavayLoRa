@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.18 (Изменение: Добавлен выход из CONFIG_STANDBY при потере связи с RX)
+ * @version 1.19 (Изменение: Индикация CONFIG_STANDBY жестко привязана к keepalive-обмену)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -138,6 +138,9 @@
  
  byte configClickCount = 0;
  unsigned long lastConfigClickTime = 0;
+ 
+ bool configBlinkActive = false;
+ unsigned long configBlinkStartTime = 0; 
  
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
@@ -468,13 +471,18 @@
  } // end processButton
  
  void processConfigLed() {
-   unsigned long t = millis() % 3600;
-   if (t < 100) { updateStatusLed(true); }
-   else if (t < 200) { updateStatusLed(false); }
-   else if (t < 300) { updateStatusLed(true); }
-   else if (t < 400) { updateStatusLed(false); }
-   else if (t < 500) { updateStatusLed(true); }
-   else { updateStatusLed(false); }
+   if (!configBlinkActive) return;
+   
+   unsigned long elapsed = millis() - configBlinkStartTime;
+   if (elapsed < 100) { updateStatusLed(true); }
+   else if (elapsed < 200) { updateStatusLed(false); }
+   else if (elapsed < 300) { updateStatusLed(true); }
+   else if (elapsed < 400) { updateStatusLed(false); }
+   else if (elapsed < 500) { updateStatusLed(true); }
+   else { 
+     updateStatusLed(false); 
+     configBlinkActive = false; 
+   } // end if
  } // end processConfigLed
  
  void processPreparationMode() {
@@ -497,6 +505,11 @@
        } // end if
        currentState = STATE_CONFIG_STANDBY;
        pingTimer = millis();
+       
+       // Взводим 3 быстрых моргания как подтверждение входа
+       configBlinkActive = true; 
+       configBlinkStartTime = millis(); 
+       
        configClickCount = 0;
      } // end if
      prepClickCount = 0; 
@@ -529,11 +542,14 @@
    if ((millis() - pingTimer) > pingTimeout) {
      if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
        DEBUGln(F("Config Keepalive OK"));
+       // Взводим неблокирующий таймер на 3 быстрых моргания
+       configBlinkActive = true; 
+       configBlinkStartTime = millis(); 
      } else {
        DEBUGln(F("Config Keepalive FAILED! RX lost. Reverting to NORMAL."));
        currentState = STATE_NORMAL;
        updateStatusLed(false);
-       flashStatusLed(2); // Индикация ошибки связи
+       flashStatusLed(2); 
      } // end if
      pingTimer = millis(); 
    } // end if

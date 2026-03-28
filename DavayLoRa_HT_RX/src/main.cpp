@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.17, 1.18 (Изменение: Добавлена стейт-машина и синхронная индикация CONFIG_STANDBY)
+ * @version 1.19 (Изменение: Индикация CONFIG_STANDBY жестко привязана к keepalive-обмену)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -122,6 +122,9 @@
    STATE_CONFIG
  };
  SystemState currentState = STATE_NORMAL;
+ 
+ bool configBlinkActive = false;
+ unsigned long configBlinkStartTime = 0;
  
  unsigned long workingFrequency[MAX_ADDRESS] = {
    434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
@@ -446,6 +449,10 @@
        pingTimeOutLastTime = millis();
        sendMessage(rcvAddress, CMD_CONFIG_OK, 1);
        
+       // Взводим 3 быстрых моргания как подтверждение получения пинга
+       configBlinkActive = true; 
+       configBlinkStartTime = millis(); 
+       
        analogWrite(PIN_SIGNAL_LED, 0);
        analogWrite(PIN_SIGNAL_BUZZERS, 0);
        break;
@@ -482,13 +489,18 @@
  } // end processSignal
  
  void processConfigLed() {
-   unsigned long t = millis() % 3600;
-   if (t < 100) { updateStatusLed(true); }
-   else if (t < 200) { updateStatusLed(false); }
-   else if (t < 300) { updateStatusLed(true); }
-   else if (t < 400) { updateStatusLed(false); }
-   else if (t < 500) { updateStatusLed(true); }
-   else { updateStatusLed(false); }
+   if (!configBlinkActive) return;
+   
+   unsigned long elapsed = millis() - configBlinkStartTime;
+   if (elapsed < 100) { updateStatusLed(true); }
+   else if (elapsed < 200) { updateStatusLed(false); }
+   else if (elapsed < 300) { updateStatusLed(true); }
+   else if (elapsed < 400) { updateStatusLed(false); }
+   else if (elapsed < 500) { updateStatusLed(true); }
+   else { 
+     updateStatusLed(false); 
+     configBlinkActive = false; 
+   } // end if
  } // end processConfigLed
  
  void processCutoff() {
