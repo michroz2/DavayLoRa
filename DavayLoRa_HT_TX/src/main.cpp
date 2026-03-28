@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.19 (Изменение: Индикация CONFIG_STANDBY жестко привязана к keepalive-обмену)
+ * @version 1.20 (Изменение: Добавлен запуск WiFi Captive Portal по 1 клику)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -10,6 +10,9 @@
  #include <SPI.h>
  #include <RadioLib.h>
  #include <Preferences.h>
+ #include <WiFi.h>
+ #include <WebServer.h>
+ #include <DNSServer.h>
  
  Preferences preferences;
  
@@ -142,6 +145,15 @@
  bool configBlinkActive = false;
  unsigned long configBlinkStartTime = 0; 
  
+ // ======================= ПЕРЕМЕННЫЕ WIFI И CAPTIVE PORTAL =======================
+ WebServer server(80);
+ const byte DNS_PORT = 53;
+ DNSServer dnsServer;
+ 
+ bool isWifiActive = false;
+ unsigned long wifiStartTime = 0;
+ const unsigned long wifiTimeout = 600000; // 10 минут
+ 
  // --- ПРОТОТИПЫ ФУНКЦИЙ ---
  void loadConfig();
  void saveConfig();
@@ -171,6 +183,8 @@
  void flashLedBattery(byte times);
  void processBattery();
  void stopWorking();
+ void startWiFiPortal();
+ void stopWiFiPortal();
  
  // ======================= РАБОТА С ПАМЯТЬЮ NVS =======================
  
@@ -325,10 +339,45 @@
    wasReceived = true; 
  } // end onReceive
  
+ // ======================= WIFI & CAPTIVE PORTAL =======================
+ 
+ void startWiFiPortal() {
+   DEBUGln(F("Starting WiFi AP..."));
+   WiFi.mode(WIFI_AP);
+   WiFi.softAP("DavayLoRa_TX");
+   delay(100);
+   
+   IPAddress apIP = WiFi.softAPIP();
+   DEBUG(F("AP IP address: "));
+   DEBUGln(apIP);
+   
+   dnsServer.start(DNS_PORT, "*", apIP);
+   
+   server.onNotFound([]() {
+     server.send(200, "text/html", "<h1>DavayLoRa Config</h1><p>Captive Portal is working! Next step: adding the real web UI.</p>");
+   });
+   
+   server.begin();
+   isWifiActive = true;
+   wifiStartTime = millis();
+   DEBUGln(F("WiFi and WebServer started."));
+ } // end startWiFiPortal
+ 
+ void stopWiFiPortal() {
+   DEBUGln(F("Stopping WiFi..."));
+   server.stop();
+   dnsServer.stop();
+   WiFi.softAPdisconnect(true);
+   WiFi.mode(WIFI_OFF);
+   isWifiActive = false;
+ } // end stopWiFiPortal
+ 
  // ======================= БИЗНЕС-ЛОГИКА (СОН, КНОПКА И ПИНГ) =======================
  
  void enterDeepSleep() {
    DEBUGln(F("Preparing Hardware for Deep Sleep..."));
+   
+   if (isWifiActive) stopWiFiPortal(); 
    
    radio.sleep();
    
@@ -506,7 +555,6 @@
        currentState = STATE_CONFIG_STANDBY;
        pingTimer = millis();
        
-       // Взводим 3 быстрых моргания как подтверждение входа
        configBlinkActive = true; 
        configBlinkStartTime = millis(); 
        
@@ -529,12 +577,17 @@
    if (configClickCount > 0 && (millis() - lastConfigClickTime > 600)) {
      if (configClickCount == 2) {
        DEBUGln(F("2 clicks -> Exit Config, go to NORMAL"));
+       if (isWifiActive) stopWiFiPortal();
        commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
        currentState = STATE_NORMAL;
        updateStatusLed(false);
      } else if (configClickCount == 1) {
-       DEBUGln(F("1 click -> (ЗАГОТОВКА) Включить WiFi и таймаут 10 минут"));
-       // ЗДЕСЬ БУДЕТ ШАГ 2.4.2
+       if (!isWifiActive) {
+         DEBUGln(F("1 click -> Enabling WiFi Captive Portal"));
+         startWiFiPortal();
+       } else {
+         DEBUGln(F("1 click -> Ignore (WiFi is already active)"));
+       } // end if
      } // end if
      configClickCount = 0;
    } // end if
@@ -542,11 +595,11 @@
    if ((millis() - pingTimer) > pingTimeout) {
      if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
        DEBUGln(F("Config Keepalive OK"));
-       // Взводим неблокирующий таймер на 3 быстрых моргания
        configBlinkActive = true; 
        configBlinkStartTime = millis(); 
      } else {
        DEBUGln(F("Config Keepalive FAILED! RX lost. Reverting to NORMAL."));
+       if (isWifiActive) stopWiFiPortal(); 
        currentState = STATE_NORMAL;
        updateStatusLed(false);
        flashStatusLed(2); 
@@ -841,6 +894,21 @@
      processPreparationMode();
    } else if (currentState == STATE_CONFIG_STANDBY) {
      processConfigStandby();
+   } // end if
+   
+   // Обработка работы веб-сервера
+   if (isWifiActive) {
+     dnsServer.processNextRequest();
+     server.handleClient();
+     
+     // Проверка 10-минутного таймаута
+     if (millis() - wifiStartTime > wifiTimeout) {
+       DEBUGln(F("WiFi Timeout! Reverting to NORMAL."));
+       stopWiFiPortal();
+       commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
+       currentState = STATE_NORMAL;
+       updateStatusLed(false);
+     } // end if
    } // end if
    
    EVERY_MS(batteryPeriod) {

@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.19 (Изменение: Индикация CONFIG_STANDBY жестко привязана к keepalive-обмену)
+ * @version 1.20 (Изменение: Синхронизация версии с TX - включение  Captive portal)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -449,7 +449,6 @@
        pingTimeOutLastTime = millis();
        sendMessage(rcvAddress, CMD_CONFIG_OK, 1);
        
-       // Взводим 3 быстрых моргания как подтверждение получения пинга
        configBlinkActive = true; 
        configBlinkStartTime = millis(); 
        
