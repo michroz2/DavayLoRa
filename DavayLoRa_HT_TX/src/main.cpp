@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.14 (Изменение: Добавлена переменная pingTimeoutRX в NVS для будущего портала)
+ * @version 1.15 (Изменение: Защита от "горячего" процессора при заклинивании кнопки)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -18,8 +18,9 @@
  int pwmledBrightness = 35;            
  int fbledBrightness = 255;            
  unsigned long pingTimeout = 3000;     
- unsigned long pingTimeoutRX = 9000;   // Таймаут для RX (храним для настройки через Captive Portal)
+ unsigned long pingTimeoutRX = 9000;   
  unsigned long bigTimeout = 3600000;   
+ unsigned long stuckSleepTime = 10000; 
  bool measurebattery = true;           
  unsigned long batteryPeriod = 300000;    
  unsigned long sleepLedDuration = 2000;   
@@ -171,6 +172,7 @@
    pingTimeout = preferences.getULong("pingTimeout", 3000);
    pingTimeoutRX = preferences.getULong("pingRx", 9000); 
    bigTimeout = preferences.getULong("bigTimeout", 3600000);
+   stuckSleepTime = preferences.getULong("stuckSleep", 10000);
    
    batteryPeriod = preferences.getULong("batPeriod", 300000);
    sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
@@ -193,6 +195,7 @@
    preferences.putULong("pingTimeout", pingTimeout);
    preferences.putULong("pingRx", pingTimeoutRX); 
    preferences.putULong("bigTimeout", bigTimeout);
+   preferences.putULong("stuckSleep", stuckSleepTime);
    
    preferences.putULong("batPeriod", batteryPeriod);
    preferences.putULong("sleepLedDur", sleepLedDuration);
@@ -227,9 +230,7 @@
    
    lastSendTime = millis();
    
-   // Игнорируем прерывание TxDone, которое только что подняло этот флаг
    receivedFlag = false; 
-   
    radio.startReceive(); 
  } // end sendMessage
  
@@ -339,22 +340,29 @@
    pinMode(PIN_BATTERY_LED, OUTPUT);
    digitalWrite(PIN_BATTERY_LED, LOW);
    
-   DEBUGln(F("Waiting for button release to sleep..."));
-   while (digitalRead(PIN_BUTTON) == LOW) {
-     delay(50);
-   } // end while
-   
-   DEBUGln(F("Good night!"));
-   
    rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
    rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
    
-   esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+   if (digitalRead(PIN_BUTTON) == LOW) {
+     DEBUGln(F("Button is STUCK. Sleeping for 10s..."));
+     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+     esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
+   } else {
+     DEBUGln(F("Good night!"));
+     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+     esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+   } // end if
+   
    esp_deep_sleep_start();
  } // end enterDeepSleep
  
  void runWakeUpProtection(uint8_t wakeupPin) {
    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+   
+   if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+     DEBUGln(F("Wakeup from TIMER (Stuck check)."));
+     enterDeepSleep(); 
+   } // end if
    
    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
      DEBUGln(F("Wakeup from EXT0. Checking protection..."));
@@ -763,4 +771,3 @@
      } // end if
    } // end EVERY_MS
  } // end loop
- 

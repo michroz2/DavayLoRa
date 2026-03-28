@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.14 (Изменение: pingTimeout вынесен в NVS)
+ * @version 1.15 (Изменение: Защита от "горячего" процессора при заклинивании магнита)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -18,7 +18,8 @@
  int pwmledBrightness = 35;            
  int buzzerVolume = 255;               
  unsigned long cutoffTime = 2000;      
- unsigned long pingTimeout = 9000;     // Таймаут для приема пинга вынесен в NVS
+ unsigned long pingTimeout = 9000;     
+ unsigned long stuckSleepTime = 10000; 
  bool measurebattery = true;           
  unsigned long batteryPeriod = 300000;    
  unsigned long sleepLedDuration = 2000;   
@@ -158,6 +159,7 @@
    buzzerVolume = preferences.getInt("buzzerVol", 255);
    cutoffTime = preferences.getULong("cutoffTime", 2000);
    pingTimeout = preferences.getULong("pingTimeout", 9000);
+   stuckSleepTime = preferences.getULong("stuckSleep", 10000);
    
    enableBigLed = preferences.getBool("enBigLed", true);
    enableBuzzer = preferences.getBool("enBuzzer", false);
@@ -182,6 +184,7 @@
    preferences.putInt("buzzerVol", buzzerVolume);
    preferences.putULong("cutoffTime", cutoffTime);
    preferences.putULong("pingTimeout", pingTimeout);
+   preferences.putULong("stuckSleep", stuckSleepTime);
    
    preferences.putBool("enBigLed", enableBigLed);
    preferences.putBool("enBuzzer", enableBuzzer);
@@ -231,9 +234,7 @@
    lastSendTime = millis();
    pingTimeOutLastTime = lastSendTime;
    
-   // Игнорируем прерывание TxDone, которое только что подняло этот флаг
    receivedFlag = false; 
-   
    radio.startReceive();                         
  } // end sendMessage
  
@@ -305,22 +306,29 @@
    pinMode(PIN_SIGNAL_BUZZERS, OUTPUT);
    digitalWrite(PIN_SIGNAL_BUZZERS, LOW);
    
-   DEBUGln(F("Waiting for magnet release to sleep..."));
-   while (digitalRead(PIN_REED) == LOW) {
-     delay(50);
-   } // end while
-   
-   DEBUGln(F("Good night!"));
-   
    rtc_gpio_pullup_en((gpio_num_t)PIN_REED);
    rtc_gpio_pulldown_dis((gpio_num_t)PIN_REED);
    
-   esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_REED, 0);
+   if (digitalRead(PIN_REED) == LOW) {
+     DEBUGln(F("Magnet is STUCK. Sleeping for 10s..."));
+     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+     esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
+   } else {
+     DEBUGln(F("Good night!"));
+     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+     esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_REED, 0);
+   } // end if
+   
    esp_deep_sleep_start();
  } // end enterDeepSleep
  
  void runWakeUpProtection(uint8_t wakeupPin) {
    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+   
+   if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+     DEBUGln(F("Wakeup from TIMER (Stuck check)."));
+     enterDeepSleep(); 
+   } // end if
    
    if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
      DEBUGln(F("Wakeup from EXT0. Checking protection..."));
