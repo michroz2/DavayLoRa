@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.15 (Изменение: Защита от "горячего" процессора при заклинивании магнита)
+ * @version 1.16 (Исправление: Убрана системная ошибка Incorrect wakeup source)
  * @brief Прошивка приёмника (Receiver) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -311,11 +311,9 @@
    
    if (digitalRead(PIN_REED) == LOW) {
      DEBUGln(F("Magnet is STUCK. Sleeping for 10s..."));
-     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
      esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
    } else {
      DEBUGln(F("Good night!"));
-     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
      esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_REED, 0);
    } // end if
    
