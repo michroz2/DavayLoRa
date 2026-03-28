@@ -1,6 +1,6 @@
 /**
  * @file webpage.h
- * @version 1.24 (Изменение: Добавлен таймер и кнопка Отмена)
+ * @version 1.25 (Изменение: Кнопки Сохранить и Отмена расположены вертикально)
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
@@ -28,10 +28,12 @@
      .checkbox-container { display: flex; align-items: center; margin-top: 15px; background: #2a2a2a; padding: 12px; border-radius: 6px; }
      input[type="checkbox"] { transform: scale(1.5); margin: 0 10px 0 5px; accent-color: #4CAF50; }
      .checkbox-container span { font-size: 15px; color: #fff; }
-     .buttons-container { display: flex; gap: 10px; margin-bottom: 30px; margin-top: 10px; }
-     input[type="submit"] { flex: 2; background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+     
+     /* ИЗМЕНЕНИЯ ЗДЕСЬ: Вертикальное расположение кнопок */
+     .buttons-container { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; margin-top: 10px; }
+     input[type="submit"] { background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
      input[type="submit"]:hover { background-color: #45a049; }
-     .cancel-btn { flex: 1; background-color: #f44336; color: white; text-decoration: none; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+     .cancel-btn { background-color: #f44336; color: white; text-decoration: none; padding: 16px; display: flex; align-items: center; justify-content: center; border-radius: 6px; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
      .cancel-btn:hover { background-color: #d32f2f; }
    </style>
    <script>
