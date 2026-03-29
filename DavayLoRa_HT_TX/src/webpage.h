@@ -1,6 +1,6 @@
 /**
  * @file webpage.h
- * @version 1.25 (Изменение: Кнопки Сохранить и Отмена расположены вертикально)
+ * @version 1.26
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
@@ -28,8 +28,6 @@
      .checkbox-container { display: flex; align-items: center; margin-top: 15px; background: #2a2a2a; padding: 12px; border-radius: 6px; }
      input[type="checkbox"] { transform: scale(1.5); margin: 0 10px 0 5px; accent-color: #4CAF50; }
      .checkbox-container span { font-size: 15px; color: #fff; }
-     
-     /* ИЗМЕНЕНИЯ ЗДЕСЬ: Вертикальное расположение кнопок */
      .buttons-container { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; margin-top: 10px; }
      input[type="submit"] { background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
      input[type="submit"]:hover { background-color: #45a049; }
@@ -41,7 +39,7 @@
      function updateTimer() {
        if (timeLeft <= 0) {
          document.getElementById('timeDisplay').innerText = "00:00";
-         alert("⏳ Время конфигурации истекло! Пульт возвращается в рабочий режим.");
+         alert("⏳ Время конфигурации истекло!");
          window.location.reload();
          return;
        }
@@ -56,51 +54,40 @@
  </head>
  <body>
    <h2>⚙️ Настройка DavayLoRa</h2>
-   <div class="timer">⏳ Осталось времени: <span id="timeDisplay">--:--</span></div>
+   <div class="timer">⏳ До автовыхода: <span id="timeDisplay">--:--</span></div>
    
    <form action="/save" method="POST">
-     
      <fieldset>
        <legend>🌍 Общие настройки</legend>
        <label>Рабочий канал / Адрес (0-19):</label>
        <input type="number" name="workAddress" value="%ADDR%" min="0" max="19" required>
-       
        <div class="checkbox-container">
          <input type="checkbox" name="measurebattery" value="1" %BAT_CHK%>
-         <span>Включить защиту и проверку батареи</span>
+         <span>Включить проверку батареи</span>
        </div>
-       
        <label>Период проверки батареи (мс):</label>
        <input type="number" name="batteryPeriod" value="%BAT_PER%" min="10000" step="1000" required>
-       
-       <label>Защита от случайного вкл. (удержание, мс):</label>
+       <label>Защита от вкл. (удержание, мс):</label>
        <input type="number" name="wakeUpHoldTime" value="%WK_HOLD%" min="100" step="100" required>
-       
        <label>Окно отпускания кнопки (мс):</label>
        <input type="number" name="wakeUpReleaseWindow" value="%WK_REL%" min="100" step="100" required>
-       
-       <label>Сон при зажатой кнопке/магните (мс):</label>
+       <label>Сон при заклинивании (мс):</label>
        <input type="number" name="stuckSleepTime" value="%STUCK_SL%" min="1000" step="1000" required>
- 
-       <label>Макс. время режима конфигурации (мс):</label>
+       <label>Таймаут настроек (мс):</label>
        <input type="number" name="configTimeout" value="%CONF_TO%" min="60000" step="10000" required>
      </fieldset>
  
      <fieldset>
        <legend>📡 Пульт (TX)</legend>
-       <label>Яркость кнопки-индикатора (0-255):</label>
+       <label>Яркость кнопки (0-255):</label>
        <input type="number" name="pwmledBrightness" value="%TX_BIG_LED%" min="0" max="255" required>
-       
-       <label>Яркость статусного диода (0-255):</label>
+       <label>Яркость статуса (0-255):</label>
        <input type="number" name="fbledBrightness" value="%TX_FB_LED%" min="0" max="255" required>
-       
-       <label>Таймаут потери связи (Ping TX, мс):</label>
+       <label>Ping TX (мс):</label>
        <input type="number" name="pingTimeout" value="%TX_PING%" min="1000" step="100" required>
-       
-       <label>Авто-сон при бездействии (мс):</label>
+       <label>Авто-сон (мс):</label>
        <input type="number" name="bigTimeout" value="%TX_BIG_TO%" min="10000" step="1000" required>
- 
-       <label>Индикация перед сном (мс):</label>
+       <label>Индикация сна (мс):</label>
        <input type="number" name="sleepLedDuration" value="%TX_SLP_LED%" min="100" step="100" required>
      </fieldset>
  
@@ -108,27 +95,24 @@
        <legend>🔔 Приёмник (RX)</legend>
        <div class="checkbox-container">
          <input type="checkbox" name="rxEnableBigLed" value="1" %RX_BIG_EN%>
-         <span>Включить силовой светодиод (Фонарь)</span>
+         <span>Включить фонарь</span>
        </div>
-       <label>Яркость фонаря RX (0-255):</label>
+       <label>Яркость фонаря (0-255):</label>
        <input type="number" name="rxPwmledBrightness" value="%RX_BIG_LED%" min="0" max="255" required>
- 
        <div class="checkbox-container">
          <input type="checkbox" name="rxEnableBuzzer" value="1" %RX_BUZ_EN%>
-         <span>Включить звуковой сигнал (Пищалка)</span>
+         <span>Включить пищалку</span>
        </div>
-       <label>Громкость пищалки RX (0-255):</label>
+       <label>Громкость пищалки (0-255):</label>
        <input type="number" name="rxBuzzerVolume" value="%RX_BUZ_VOL%" min="0" max="255" required>
-       
-       <label>Таймаут отсечки сигнала (Cutoff, мс):</label>
+       <label>Cutoff отсечка (мс):</label>
        <input type="number" name="rxCutoffTime" value="%RX_CUTOFF%" min="100" step="100" required>
-       
-       <label>Таймаут потери связи (Ping RX, мс):</label>
+       <label>Ping RX (мс):</label>
        <input type="number" name="pingTimeoutRX" value="%RX_PING%" min="1000" step="100" required>
      </fieldset>
  
      <div class="buttons-container">
-       <input type="submit" value="💾 Сохранить">
+       <input type="submit" value="💾 Сохранить и Перезагрузить">
        <a href="/cancel" class="cancel-btn">❌ Отмена</a>
      </div>
    </form>
