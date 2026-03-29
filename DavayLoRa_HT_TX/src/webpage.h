@@ -1,18 +1,18 @@
 /**
  * @file webpage.h
- * @version 1.26
+ * @version 1.32
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
- #ifndef WEBPAGE_H
- #define WEBPAGE_H
- 
- #include <Arduino.h>
- 
- const char index_html[] PROGMEM = R"rawliteral(
- <!DOCTYPE HTML>
- <html lang="ru">
- <head>
+#ifndef WEBPAGE_H
+#define WEBPAGE_H
+
+#include <Arduino.h>
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML>
+<html lang="ru">
+<head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width, initial-scale=1">
    <title>DavayLoRa Config</title>
@@ -51,15 +51,15 @@
      }
      window.onload = updateTimer;
    </script>
- </head>
- <body>
+</head>
+<body>
    <h2>⚙️ Настройка DavayLoRa</h2>
    <div class="timer">⏳ До автовыхода: <span id="timeDisplay">--:--</span></div>
    
    <form action="/save" method="POST">
      <fieldset>
        <legend>🌍 Общие настройки</legend>
-       <label>Рабочий канал / Адрес (0-19):</label>
+       <label>Рабочий канал (0-19):</label>
        <input type="number" name="workAddress" value="%ADDR%" min="0" max="19" required>
        <div class="checkbox-container">
          <input type="checkbox" name="measurebattery" value="1" %BAT_CHK%>
@@ -67,57 +67,57 @@
        </div>
        <label>Период проверки батареи (мс):</label>
        <input type="number" name="batteryPeriod" value="%BAT_PER%" min="10000" step="1000" required>
-       <label>Защита от вкл. (удержание, мс):</label>
+       <label>Время удержания при вкл. (мс):</label>
        <input type="number" name="wakeUpHoldTime" value="%WK_HOLD%" min="100" step="100" required>
-       <label>Окно отпускания кнопки (мс):</label>
+       <label>Окно отпускания при вкл. (мс):</label>
        <input type="number" name="wakeUpReleaseWindow" value="%WK_REL%" min="100" step="100" required>
-       <label>Сон при заклинивании (мс):</label>
+       <label>Таймаут заклинивания вкл. (мс):</label>
        <input type="number" name="stuckSleepTime" value="%STUCK_SL%" min="1000" step="1000" required>
        <label>Таймаут настроек (мс):</label>
        <input type="number" name="configTimeout" value="%CONF_TO%" min="60000" step="10000" required>
+       <label>Индикация выключения (мс):</label>
+       <input type="number" name="sleepLedDuration" value="%SLP_LED%" min="100" step="100" required>
      </fieldset>
- 
+
      <fieldset>
        <legend>📡 Пульт (TX)</legend>
-       <label>Яркость кнопки (0-255):</label>
+       <label>Яркость LED (0-255):</label>
        <input type="number" name="pwmledBrightness" value="%TX_BIG_LED%" min="0" max="255" required>
-       <label>Яркость статуса (0-255):</label>
+       <label>Яркость кнопки (0-255):</label>
        <input type="number" name="fbledBrightness" value="%TX_FB_LED%" min="0" max="255" required>
-       <label>Ping TX (мс):</label>
+       <label>Таймаут Пинга (мс):</label>
        <input type="number" name="pingTimeout" value="%TX_PING%" min="1000" step="100" required>
-       <label>Авто-сон (мс):</label>
+       <label>Таймаут отключения Пинга:</label>
        <input type="number" name="bigTimeout" value="%TX_BIG_TO%" min="10000" step="1000" required>
-       <label>Индикация сна (мс):</label>
-       <input type="number" name="sleepLedDuration" value="%TX_SLP_LED%" min="100" step="100" required>
      </fieldset>
- 
+
      <fieldset>
        <legend>🔔 Приёмник (RX)</legend>
        <div class="checkbox-container">
          <input type="checkbox" name="rxEnableBigLed" value="1" %RX_BIG_EN%>
-         <span>Включить фонарь</span>
+         <span>Включить светодиод</span>
        </div>
-       <label>Яркость фонаря (0-255):</label>
+       <label>Яркость светодиода (0-255):</label>
        <input type="number" name="rxPwmledBrightness" value="%RX_BIG_LED%" min="0" max="255" required>
        <div class="checkbox-container">
          <input type="checkbox" name="rxEnableBuzzer" value="1" %RX_BUZ_EN%>
-         <span>Включить пищалку</span>
+         <span>Включить вибратор</span>
        </div>
-       <label>Громкость пищалки (0-255):</label>
+       <label>Громкость вибратора (0-255):</label>
        <input type="number" name="rxBuzzerVolume" value="%RX_BUZ_VOL%" min="0" max="255" required>
-       <label>Cutoff отсечка (мс):</label>
+       <label>Отсечка постоянного нажатия (мс):</label>
        <input type="number" name="rxCutoffTime" value="%RX_CUTOFF%" min="100" step="100" required>
-       <label>Ping RX (мс):</label>
+       <label>Таймаут потери Пинга RX (мс):</label>
        <input type="number" name="pingTimeoutRX" value="%RX_PING%" min="1000" step="100" required>
      </fieldset>
- 
+
      <div class="buttons-container">
        <input type="submit" value="💾 Сохранить и Перезагрузить">
        <a href="/cancel" class="cancel-btn">❌ Отмена</a>
      </div>
    </form>
- </body>
- </html>
- )rawliteral";
- 
- #endif
+</body>
+</html>
+)rawliteral";
+
+#endif
