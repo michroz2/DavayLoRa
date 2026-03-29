@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.33 (Исправлен выход из режима подготовки при одиночном клике)
+ * @version 1.35 (TX: Надежный выход из Exec-Config)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -139,6 +139,10 @@
  #define CMD_SYNC_CONFIG    220
  #define CMD_SYNC_CONFIG_OK 221
  #define CMD_REBOOT         222
+ #define CMD_EXEC_CONFIG    223
+ #define CMD_EXEC_CONFIG_OK 224
+ #define CMD_CYCLE_EXEC     225
+ #define CMD_CYCLE_EXEC_OK  226
  
  // Переменные для обработки радиопакетов
  byte sndCmd = CMD_PING;
@@ -174,7 +178,8 @@
  enum SystemState {
     STATE_NORMAL,          // Обычный рабочий режим
     STATE_PREPARATION,     // Режим подготовки (зажата кнопка на 10 сек)
-    STATE_CONFIG_STANDBY   // Режим ожидания/настройки (после 4 кликов)
+    STATE_CONFIG_STANDBY,  // Режим ожидания/настройки (после 4 кликов)
+    STATE_EXEC_CONFIG      // Режим быстрой настройки исполнительных элементов (после 3 кликов)
  };
  SystemState currentState = STATE_NORMAL;
  
@@ -189,6 +194,12 @@
  
  bool configBlinkActive = false;
  unsigned long configBlinkStartTime = 0; 
+ 
+ byte execClickCount = 0;
+ unsigned long lastExecClickTime = 0;
+ 
+ bool execBlinkActive = false;
+ unsigned long execBlinkStartTime = 0; 
  
  // ======================= ПЕРЕМЕННЫЕ WIFI =======================
  WebServer server(80);
@@ -209,6 +220,8 @@
  void processPreparationMode();
  void processConfigStandby();
  void processConfigLed();
+ void processExecConfigStandby();
+ void processExecConfigLed();
  void processPing();
  void processUserButton();
  void sleepSystem();
@@ -752,6 +765,10 @@
           // Подсчет кликов в режиме конфигурации
           configClickCount++; lastConfigClickTime = millis();
           DEBUG(F("[ACTION] Config Click Count: ")); DEBUGln(configClickCount);
+        } else if (currentState == STATE_EXEC_CONFIG) {
+          // Подсчет кликов в режиме управления исполнительными элементами
+          execClickCount++; lastExecClickTime = millis();
+          DEBUG(F("[ACTION] Exec Config Click Count: ")); DEBUGln(execClickCount);
         }
       } else { // Кнопка отпущена
         DEBUGln(F("\n[ACTION] Main Button RELEASED"));
@@ -763,7 +780,7 @@
  }
  
  /**
-  * Визуальный паттерн для режима конфигурации (двойная вспышка)
+  * Визуальный паттерн для режима конфигурации (тройная вспышка)
   */
  void processConfigLed() {
     if (!configBlinkActive) return;
@@ -774,6 +791,18 @@
     else if (elapsed < 400) updateStatusLed(false); 
     else if (elapsed < 500) updateStatusLed(true); 
     else { updateStatusLed(false); configBlinkActive = false; }
+ }
+ 
+ /**
+  * Визуальный паттерн для режима исполнительных элементов (двойная вспышка)
+  */
+ void processExecConfigLed() {
+    if (!execBlinkActive) return;
+    unsigned long elapsed = millis() - execBlinkStartTime;
+    if (elapsed < 100) updateStatusLed(true); 
+    else if (elapsed < 200) updateStatusLed(false); 
+    else if (elapsed < 300) updateStatusLed(true); 
+    else { updateStatusLed(false); execBlinkActive = false; }
  }
  
  /**
@@ -793,6 +822,16 @@
         DEBUGln(F("[ACTION] 2 clicks -> Centralized Sleep"));
         sleepSystem(); 
       } 
+      else if (prepClickCount == 3) {
+        DEBUGln(F("\n[STATE] ---> STATE_EXEC_CONFIG"));
+        if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
+           DEBUGln(F("[RADIO] RX confirmed EXEC_CONFIG mode"));
+        }
+        currentState = STATE_EXEC_CONFIG;
+        pingTimer = millis();
+        execBlinkActive = true; execBlinkStartTime = millis(); 
+        execClickCount = 0;
+      }
       else if (prepClickCount == 4) {
         DEBUGln(F("\n[STATE] ---> STATE_CONFIG_STANDBY"));
         if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
@@ -843,6 +882,51 @@
       } else {
         DEBUGln(F("[RADIO] Config Keepalive Failed! ---> STATE_NORMAL"));
         if (isWifiActive) stopWiFiPortal(); 
+        currentState = STATE_NORMAL; updateStatusLed(false); flashStatusLed(2); 
+      }
+      pingTimer = millis(); 
+    }
+ }
+ 
+ /**
+  * Обработка логики в режиме настройки исполнительных элементов (управление LED/Buzzer)
+  */
+ void processExecConfigStandby() {
+    processExecConfigLed();
+ 
+    if (execClickCount > 0 && (millis() - lastExecClickTime > 600)) {
+      if (execClickCount == 2) {
+        DEBUGln(F("[ACTION] 2 clicks -> Exit Exec Config ---> STATE_NORMAL"));
+        commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
+        currentState = STATE_NORMAL; updateStatusLed(false);
+      } else if (execClickCount == 1) {
+        DEBUGln(F("[ACTION] 1 click -> Cycle Actuators"));
+        if (commSession(CMD_CYCLE_EXEC, 1, CMD_CYCLE_EXEC_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
+           // rcvData содержит новое состояние с приемника (бит 0 - LED, бит 1 - Buzzer)
+           rxSettings.rxEnableBigLed = (rcvData & 0x01);
+           rxSettings.rxEnableBuzzer = (rcvData & 0x02) >> 1;
+           saveConfig();
+           DEBUG(F("[ACTION] RX Actuators cycled successfully. LED: ")); DEBUG(rxSettings.rxEnableBigLed);
+           DEBUG(F(", BUZZER: ")); DEBUGln(rxSettings.rxEnableBuzzer);
+        } else {
+           DEBUGln(F("[RADIO] Cycle command failed!"));
+           flashStatusLed(2);
+        }
+      } else {
+        // НОВОЕ: Обработка любых других кликов как отмена
+        DEBUGln(F("[ACTION] Other click count -> Exit Exec Config ---> STATE_NORMAL"));
+        commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
+        currentState = STATE_NORMAL; updateStatusLed(false);
+      }
+      execClickCount = 0;
+    }
+ 
+    // Поддержание режима EXEC_CONFIG на стороне RX
+    if ((millis() - pingTimer) > pingTimeout) {
+      if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
+        execBlinkActive = true; execBlinkStartTime = millis(); 
+      } else {
+        DEBUGln(F("[RADIO] Exec Config Keepalive Failed! ---> STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); flashStatusLed(2); 
       }
       pingTimer = millis(); 
@@ -964,7 +1048,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.33 ==========="));
+    DEBUGln(F("=========== START TX v1.35 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("TX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
@@ -1027,6 +1111,7 @@
     if (currentState == STATE_NORMAL) processPing();
     else if (currentState == STATE_PREPARATION) processPreparationMode();
     else if (currentState == STATE_CONFIG_STANDBY) processConfigStandby();
+    else if (currentState == STATE_EXEC_CONFIG) processExecConfigStandby();
     
     // Обработка WiFi если он активен
     if (isWifiActive) {

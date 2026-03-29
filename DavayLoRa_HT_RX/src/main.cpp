@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.32
+ * @version 1.34 (RX: Режим настройки исполнительных элементов)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Особенности: Failsafe (защита при потере связи), режим приема конфигурации по воздуху.
  */
@@ -121,6 +121,10 @@
  #define CMD_SYNC_CONFIG    220
  #define CMD_SYNC_CONFIG_OK 221
  #define CMD_REBOOT         222
+ #define CMD_EXEC_CONFIG    223
+ #define CMD_EXEC_CONFIG_OK 224
+ #define CMD_CYCLE_EXEC     225
+ #define CMD_CYCLE_EXEC_OK  226
  
  byte rcvAddress = 0;
  byte rcvCmd = 0;
@@ -135,11 +139,14 @@
  volatile bool receivedFlag = false;
  
  // Состояния RX
- enum SystemState { STATE_NORMAL, STATE_CONFIG };
+ enum SystemState { STATE_NORMAL, STATE_CONFIG, STATE_EXEC_CONFIG };
  SystemState currentState = STATE_NORMAL;
  
  bool configBlinkActive = false;
  unsigned long configBlinkStartTime = 0;
+ 
+ bool execBlinkActive = false;
+ unsigned long execBlinkStartTime = 0;
  
  unsigned long workingFrequency[MAX_ADDRESS] = {
     434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
@@ -156,6 +163,7 @@
  void processCommand();
  void processSignal();
  void processConfigLed();
+ void processExecConfigLed();
  void processCutoff();
  void processUserButton();
  void goToSleep();
@@ -414,6 +422,10 @@
         DEBUGln(F("[STATE] Config Timeout ---> STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); 
       }
+      else if (currentState == STATE_EXEC_CONFIG) { 
+        DEBUGln(F("[STATE] Exec Config Timeout ---> STATE_NORMAL"));
+        currentState = STATE_NORMAL; updateStatusLed(false); 
+      }
     }
  }
  
@@ -449,6 +461,45 @@
         configBlinkActive = true; configBlinkStartTime = millis(); 
         analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
         break;
+      case CMD_EXEC_CONFIG:
+        DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
+        currentState = STATE_EXEC_CONFIG;
+        pingTimeOutLastTime = millis();
+        sendMessage(rcvAddress, CMD_EXEC_CONFIG_OK, 1);
+        execBlinkActive = true; execBlinkStartTime = millis(); 
+        analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
+        break;
+      case CMD_CYCLE_EXEC: {
+        DEBUGln(F("[ACTION] CMD_CYCLE_EXEC received. Cycling actuators."));
+        
+        // Упаковка текущего состояния в 2 бита (00, 01, 10, 11)
+        byte state = (enableBuzzer ? 2 : 0) | (enableBigLed ? 1 : 0);
+        
+        // Сдвиг по кругу на 1 шаг
+        state = (state + 1) % 4;
+        
+        // Распаковка обратно в переменные
+        enableBigLed = (state & 0x01);
+        enableBuzzer = (state & 0x02) >> 1;
+        
+        // Сохранение в NVS
+        preferences.begin("davaylora", false);
+        preferences.putBool("enBigLed", enableBigLed);
+        preferences.putBool("enBuzzer", enableBuzzer);
+        preferences.end();
+        
+        DEBUG(F("[STATE] Actuators updated. LED: ")); DEBUG(enableBigLed);
+        DEBUG(F(", BUZZER: ")); DEBUGln(enableBuzzer);
+        
+        // Отправка подтверждения TX с новым состоянием ДО задержки
+        sendMessage(rcvAddress, CMD_CYCLE_EXEC_OK, state);
+        
+        // Физическая индикация (1 сек)
+        signalStatus = true; processSignal(); 
+        delay(1000); 
+        signalStatus = false; processSignal();
+        break;
+      }
       case CMD_NORMAL_MODE:
         DEBUGln(F("[STATE] ---> STATE_NORMAL"));
         currentState = STATE_NORMAL;
@@ -483,6 +534,15 @@
     else if (elapsed < 400) updateStatusLed(false); 
     else if (elapsed < 500) updateStatusLed(true); 
     else { updateStatusLed(false); configBlinkActive = false; }
+ }
+ 
+ void processExecConfigLed() {
+    if (!execBlinkActive) return;
+    unsigned long elapsed = millis() - execBlinkStartTime;
+    if (elapsed < 100) updateStatusLed(true); 
+    else if (elapsed < 200) updateStatusLed(false); 
+    else if (elapsed < 300) updateStatusLed(true); 
+    else { updateStatusLed(false); execBlinkActive = false; }
  }
  
  /**
@@ -578,7 +638,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.32 ==========="));
+    DEBUGln(F("=========== START RX v1.34 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("RX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
@@ -639,6 +699,7 @@
  
     if (currentState == STATE_NORMAL) processCutoff();
     else if (currentState == STATE_CONFIG) processConfigLed();
+    else if (currentState == STATE_EXEC_CONFIG) processExecConfigLed();
     
     processUserButton(); 
  
