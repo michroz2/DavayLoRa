@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.30 (Изменение: Расширенное структурное логирование стейт-машины и действий)
+ * @version 1.31 (Изменение: Динамическое имя WiFi AP на основе workAddress)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -522,12 +522,18 @@
  void startWiFiPortal() {
    DEBUGln(F("[WIFI] Starting WiFi AP (Captive Portal)..."));
    WiFi.mode(WIFI_AP);
-   WiFi.softAP("DavayLoRa_TX");
+   
+   // ФИКС: Динамическое имя сети на основе адреса устройства
+   String ssidName = "DavayLoRa_" + String(workAddress);
+   WiFi.softAP(ssidName.c_str());
+   
    delay(100);
    
    IPAddress apIP = WiFi.softAPIP();
    DEBUG(F("[WIFI] AP IP address: "));
    DEBUGln(apIP);
+   DEBUG(F("[WIFI] Network SSID: "));
+   DEBUGln(ssidName);
    
    dnsServer.start(DNS_PORT, "*", apIP);
    
@@ -847,7 +853,7 @@
  #endif
  
    DEBUGln(F("================================"));
-   DEBUGln(F("=========== START TX v1.30 ==========="));
+   DEBUGln(F("=========== START TX v1.31 ==========="));
    DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
    DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
    DEBUG(F("TX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
