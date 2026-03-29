@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.32
+ * @version 1.33 (Исправлен выход из режима подготовки при одиночном клике)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -803,6 +803,10 @@
         configBlinkActive = true; configBlinkStartTime = millis(); 
         configClickCount = 0;
       }
+      else {
+        DEBUGln(F("[ACTION] Other click count -> Exit to STATE_NORMAL"));
+        currentState = STATE_NORMAL; updateStatusLed(false);
+      }
       prepClickCount = 0; 
     }
  
@@ -960,7 +964,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.32 ==========="));
+    DEBUGln(F("=========== START TX v1.33 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("TX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
