@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.34 (RX: Режим настройки исполнительных элементов)
+ * @version 1.38 (RX: Логирование таймаутов всех режимов)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Особенности: Failsafe (защита при потере связи), режим приема конфигурации по воздуху.
  */
@@ -199,7 +199,7 @@
     pingTimeout = preferences.getULong("pingTimeout", 9000);
     stuckSleepTime = preferences.getULong("stuckSleep", 10000);
     configTimeout = preferences.getULong("confTo", 600000);
-    sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
+    sleepLedDuration = preferences.getULong("sleepLedDuration", 2000);
     
     enableBigLed = preferences.getBool("enBigLed", true);
     enableBuzzer = preferences.getBool("enBuzzer", false);
@@ -209,11 +209,8 @@
     wakeUpReleaseWindow = preferences.getULong("wkUpRel", 2000);
     
     preferences.end();
- }
+ } // конец функции loadConfig
  
- /**
-  * Парсинг структуры, полученной по воздуху от TX, и сохранение ее в NVS
-  */
  void saveConfigFromPacket(ConfigPacket* p) {
     DEBUGln(F("--- Saving received config struct to NVS ---"));
     DEBUG(F("workAddress: ")); DEBUGln(p->workAddress);
@@ -229,7 +226,7 @@
     preferences.putULong("wkUpRel", p->wakeUpReleaseWindow);
     preferences.putULong("stuckSleep", p->stuckSleepTime);
     preferences.putULong("confTo", p->configTimeout);
-    preferences.putULong("sleepLedDur", p->sleepLedDuration);
+    preferences.putULong("sleepLedDuration", p->sleepLedDuration);
     
     preferences.putBool("enBigLed", p->rxEnableBigLed);
     preferences.putInt("bigLedBright", p->rxPwmledBrightness);
@@ -239,7 +236,7 @@
     preferences.putULong("pingTimeout", p->pingTimeoutRX);
     
     preferences.end();
- }
+ } // конец функции saveConfigFromPacket
  
  // ======================= РАДИООБМЕН =======================
  
@@ -269,7 +266,7 @@
     }
     
     lastSendTime = millis();
-    pingTimeOutLastTime = lastSendTime; // Сброс таймера паники при любой передаче
+    pingTimeOutLastTime = lastSendTime; 
     receivedFlag = false; 
     radio.startReceive(); 
  }
@@ -291,10 +288,6 @@
     }
  }
  
- /**
-  * Обработка входящего пакета.
-  * RX фильтрует пакеты по размеру (3 байта для команд, и размер структуры для настроек)
-  */
  void onReceive(byte* payload, int packetSize) {
     DEBUG(F("[RADIO] <<< RX Packet [Size: ")); DEBUG(packetSize); DEBUG(F("]: "));
     for (int i = 0; i < packetSize; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
@@ -332,7 +325,7 @@
     else {
       DEBUGln(F("\t[!] Invalid packet size or command!"));
     }
- }
+ } // конец функции onReceive
  
  // ======================= БИЗНЕС-ЛОГИКА =======================
  
@@ -354,7 +347,6 @@
     rtc_gpio_pullup_en((gpio_num_t)PIN_REED);
     rtc_gpio_pulldown_dis((gpio_num_t)PIN_REED);
     
-    // Проверка геркона
     if (digitalRead(PIN_REED) == LOW) {
       DEBUGln(F("[STATE] Reed is STUCK. Sleeping with timer..."));
       esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
@@ -363,7 +355,7 @@
       esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_REED, 0);
     }
     esp_deep_sleep_start();
- }
+ } // конец функции enterDeepSleep
  
  void runWakeUpProtection(uint8_t wakeupPin) {
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -404,12 +396,8 @@
     enterDeepSleep();
  }
  
- /**
-  * Механизм Failsafe (Аварийное выключение при потере связи)
-  */
  void processTimeOut() {
     if ((millis() - pingTimeOutLastTime) > pingTimeout) {
-      // Принудительное гашение нагрузки
       signalStatus = false;
       pingTimeOutLastTime = millis();
       
@@ -418,20 +406,18 @@
         flashStatusLed(2); 
       }
       else if (currentState == STATE_CONFIG) { 
-        // Выход из режима настройки при потере связи
-        DEBUGln(F("[STATE] Config Timeout ---> STATE_NORMAL"));
+        // Изменение: Уточнен лог таймаута связи в режиме конфигурации
+        DEBUGln(F("[STATE] Config Timeout (No Heartbeat) -> STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); 
       }
       else if (currentState == STATE_EXEC_CONFIG) { 
-        DEBUGln(F("[STATE] Exec Config Timeout ---> STATE_NORMAL"));
+        // Изменение: Уточнен лог таймаута связи в режиме управления
+        DEBUGln(F("[STATE] Exec Config Timeout (No Heartbeat) -> STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); 
       }
     }
- }
+ } // конец функции processTimeOut
  
- /**
-  * Исполнение команд, полученных от TX
-  */
  void processCommand() {
     DEBUG(F("[ACTION] Processing Command: ")); DEBUGln(rcvCmd);
     switch (rcvCmd) {
@@ -471,18 +457,12 @@
         break;
       case CMD_CYCLE_EXEC: {
         DEBUGln(F("[ACTION] CMD_CYCLE_EXEC received. Cycling actuators."));
-        
-        // Упаковка текущего состояния в 2 бита (00, 01, 10, 11)
         byte state = (enableBuzzer ? 2 : 0) | (enableBigLed ? 1 : 0);
-        
-        // Сдвиг по кругу на 1 шаг
         state = (state + 1) % 4;
         
-        // Распаковка обратно в переменные
         enableBigLed = (state & 0x01);
         enableBuzzer = (state & 0x02) >> 1;
         
-        // Сохранение в NVS
         preferences.begin("davaylora", false);
         preferences.putBool("enBigLed", enableBigLed);
         preferences.putBool("enBuzzer", enableBuzzer);
@@ -491,10 +471,8 @@
         DEBUG(F("[STATE] Actuators updated. LED: ")); DEBUG(enableBigLed);
         DEBUG(F(", BUZZER: ")); DEBUGln(enableBuzzer);
         
-        // Отправка подтверждения TX с новым состоянием ДО задержки
         sendMessage(rcvAddress, CMD_CYCLE_EXEC_OK, state);
         
-        // Физическая индикация (1 сек)
         signalStatus = true; processSignal(); 
         delay(1000); 
         signalStatus = false; processSignal();
@@ -509,11 +487,8 @@
         break;
     }
     rcvCmd = 0; 
- }
+ } // конец функции processCommand
  
- /**
-  * Активация физических выходов (LED и Баззер)
-  */
  void processSignal() {
     cutoffTimer = millis(); 
     if (signalStatus && enableBigLed) analogWrite(PIN_SIGNAL_LED, pwmledBrightness);
@@ -545,9 +520,6 @@
     else { updateStatusLed(false); execBlinkActive = false; }
  }
  
- /**
-  * Аппаратная отсечка сигнала (если сигнал висит слишком долго)
-  */
  void processCutoff() {
     if (signalStatus && (millis() - cutoffTimer > cutoffTime)) {
       DEBUGln(F("[ACTION] Signal Cutoff Triggered!"));
@@ -638,11 +610,22 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.34 ==========="));
+    DEBUGln(F("=========== START RX v1.38 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("RX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
     DEBUG(F("RX Buzzer Volume: ")); DEBUGln(buzzerVolume);
+    
+    DEBUG(F("Bat. Period (ms): ")); DEBUGln(batteryPeriod);
+    DEBUG(F("Wake Hold/Rel (ms): ")); DEBUG(wakeUpHoldTime); DEBUG(F("/")); DEBUGln(wakeUpReleaseWindow);
+    DEBUG(F("Stuck Sleep (ms): ")); DEBUGln(stuckSleepTime);
+    DEBUG(F("Config TO (ms): ")); DEBUGln(configTimeout);
+    DEBUG(F("Sleep LED (ms): ")); DEBUGln(sleepLedDuration);
+    DEBUG(F("RX En. Big LED: ")); DEBUGln(enableBigLed ? "YES" : "NO");
+    DEBUG(F("RX En. Buzzer: ")); DEBUGln(enableBuzzer ? "YES" : "NO");
+    DEBUG(F("RX Cutoff (ms): ")); DEBUGln(cutoffTime);
+    DEBUG(F("RX Ping TO (ms): ")); DEBUGln(pingTimeout);
+ 
     DEBUGln(F("[STATE] ---> STATE_NORMAL (Boot)"));
  
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH);     
@@ -652,7 +635,6 @@
     analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
     digitalWrite(PIN_BATTERY_LED, 0); delay(300);
  
-    // Визуальное приветствие RX
     updateStatusLed(true);
     if (enableBigLed) analogWrite(PIN_SIGNAL_LED, pwmledBrightness);
     if (enableBuzzer) analogWrite(PIN_SIGNAL_BUZZERS, buzzerVolume);
@@ -671,7 +653,6 @@
       showNoBattery(); delay(500); 
     }
  
-    // Инициализация LoRa
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
     workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
     DEBUG(F("[RADIO] LoRa Init on Frequency: ")); DEBUGln(workFrequency);
@@ -688,12 +669,11 @@
  
     pingTimeOutLastTime = millis();
     DEBUGln(F("[STATE] Setup complete"));
- }
+ } // конец функции setup
  
  void loop() {
     checkReceive(); 
  
-    // Обработка команд или запуск паники при потере связи
     if (rcvCmd) processCommand(); 
     else processTimeOut(); 
  
@@ -706,4 +686,4 @@
     EVERY_MS(batteryPeriod) {
       if (measurebattery && isBatteryConnected) processBattery();
     }
- }
+ } // конец функции loop

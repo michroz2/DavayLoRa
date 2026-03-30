@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.36 (TX: Таймаут режима Exec-Config)
+ * @version 1.38 (TX: Логирование таймаутов всех режимов)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -58,8 +58,6 @@
  int fbledBrightness = 255;            
  unsigned long pingTimeout = 3000;     
  unsigned long bigTimeout = 3600000;   
- 
- // Новое: Таймаут настроек сигнала (мс)
  unsigned long execTimeout = 30000;    
  
  // --- Настройки приемника (для локального хранения/синхронизации) ---
@@ -204,7 +202,6 @@
  bool execBlinkActive = false;
  unsigned long execBlinkStartTime = 0; 
  
- // Новое: Таймер бездействия для режима Exec-Config
  unsigned long execModeTimer = 0; 
  
  // ======================= ПЕРЕМЕННЫЕ WIFI =======================
@@ -257,9 +254,6 @@
  
  // ======================= РАБОТА С ПАМЯТЬЮ NVS =======================
  
- /**
-  * Чтение всех настроек из энергонезависимой памяти (NVS).
-  */
  void loadConfig() {
     DEBUGln(F("--- Loading config from NVS ---"));
     preferences.begin("davaylora", false); 
@@ -277,8 +271,6 @@
     fbledBrightness = preferences.getInt("fbLedBright", 255);
     pingTimeout = preferences.getULong("pingTimeout", 3000);
     bigTimeout = preferences.getULong("bigTimeout", 3600000);
-    
-    // Изменение: Загрузка таймаута режима Exec-Config
     execTimeout = preferences.getULong("execTo", 30000); 
     
     pingTimeoutRX = preferences.getULong("pingRx", 9000); 
@@ -292,9 +284,6 @@
     DEBUGln(F("Config loaded."));
  } // конец функции loadConfig
  
- /**
-  * Сохранение локальных настроек TX в энергонезависимую память.
-  */
  void saveConfig() {
     DEBUGln(F("--- Saving config to NVS ---"));
     preferences.begin("davaylora", false);
@@ -306,21 +295,19 @@
     preferences.putULong("wkUpRel", wakeUpReleaseWindow);
     preferences.putULong("stuckSleep", stuckSleepTime);
     preferences.putULong("confTo", configTimeout);
-    preferences.putULong("sleepLedDur", sleepLedDuration);
+    preferences.putULong("sleepLedDuration", sleepLedDuration);
     
     preferences.putInt("bigLedBright", pwmledBrightness);
     preferences.putInt("fbLedBright", fbledBrightness);
     preferences.putULong("pingTimeout", pingTimeout);
     preferences.putULong("bigTimeout", bigTimeout);
-    
-    // Изменение: Сохранение таймаута режима Exec-Config
     preferences.putULong("execTo", execTimeout); 
     
     preferences.putULong("pingRx", pingTimeoutRX); 
     preferences.putBool("rxEnBigLed", rxSettings.rxEnableBigLed);
     preferences.putInt("rxBigBright", rxSettings.rxPwmledBrightness);
     preferences.putBool("rxEnBuzzer", rxSettings.rxEnableBuzzer);
-    preferences.putInt("rxBuzVol", rxSettings.rxBuzzerVolume);
+    preferences.putInt("rxBuzzerVolume", rxSettings.rxBuzzerVolume);
     preferences.putULong("rxCutoff", rxSettings.rxCutoffTime);
     
     preferences.end();
@@ -494,8 +481,6 @@
     html.replace("%TX_FB_LED%", String(fbledBrightness));
     html.replace("%TX_PING%", String(pingTimeout));
     html.replace("%TX_BIG_TO%", String(bigTimeout));
-    
-    // Изменение: Передача значения таймаута в HTML
     html.replace("%TX_EXEC_TO%", String(execTimeout));
  
     html.replace("%RX_BIG_EN%", rxSettings.rxEnableBigLed ? "checked" : "");
@@ -546,10 +531,7 @@
       fbledBrightness = server.arg("fbledBrightness").toInt();
       pingTimeout = server.arg("pingTimeout").toInt();
       bigTimeout = server.arg("bigTimeout").toInt();
-      
-      // Изменение: Чтение таймаута Exec-Config из веб-формы
       execTimeout = server.arg("execTimeout").toInt();
-      
       pingTimeoutRX = rxSettings.pingTimeoutRX;
  
       saveConfig();
@@ -722,7 +704,6 @@
           DEBUG(F("[ACTION] Config Click Count: ")); DEBUGln(configClickCount);
         } else if (currentState == STATE_EXEC_CONFIG) {
           execClickCount++; lastExecClickTime = millis();
-          // Изменение: Сброс таймера бездействия при клике пользователя
           execModeTimer = millis(); 
           DEBUG(F("[ACTION] Exec Config Click Count: ")); DEBUGln(execClickCount);
         }
@@ -774,7 +755,6 @@
         }
         currentState = STATE_EXEC_CONFIG;
         pingTimer = millis();
-        // Изменение: Запуск таймера таймаута бездействия при входе в режим
         execModeTimer = millis(); 
         execBlinkActive = true; execBlinkStartTime = millis(); 
         execClickCount = 0;
@@ -796,8 +776,9 @@
       prepClickCount = 0; 
     }
  
+    // Изменение: Логирование выхода по таймауту из режима подготовки
     if (millis() - prepModeTimer > 10000 && currentState == STATE_PREPARATION) {
-      DEBUGln(F("[STATE] Prep mode timeout ---> STATE_NORMAL"));
+      DEBUGln(F("[STATE] Prep mode timeout -> Exit to STATE_NORMAL"));
       currentState = STATE_NORMAL; prepClickCount = 0; updateStatusLed(false);
     }
  } // конец функции processPreparationMode
@@ -822,7 +803,8 @@
       if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
         configBlinkActive = true; configBlinkStartTime = millis(); 
       } else {
-        DEBUGln(F("[RADIO] Config Keepalive Failed! ---> STATE_NORMAL"));
+        // Изменение: Лог при потере связи с RX в режиме конфига
+        DEBUGln(F("[ERROR] Config Keepalive Failed! -> Exit to STATE_NORMAL"));
         if (isWifiActive) stopWiFiPortal(); 
         currentState = STATE_NORMAL; updateStatusLed(false); flashStatusLed(2); 
       }
@@ -833,14 +815,14 @@
  void processExecConfigStandby() {
     processExecConfigLed();
  
-    // Изменение: Добавлен блок контроля таймаута бездействия пользователя
     if (millis() - execModeTimer > execTimeout) {
-      DEBUGln(F("[STATE] Exec Config Inactivity Timeout ---> STATE_NORMAL"));
+      // Изменение: Уточнен лог выхода по таймауту бездействия пользователя
+      DEBUGln(F("[STATE] Exec Config Inactivity Timeout -> Exit to STATE_NORMAL"));
       commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
       currentState = STATE_NORMAL; 
       updateStatusLed(false);
       execClickCount = 0;
-    } // конец if проверки таймаута Exec Config
+    } 
  
     if (execClickCount > 0 && (millis() - lastExecClickTime > 600)) {
       if (execClickCount == 2) {
@@ -871,7 +853,8 @@
       if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
         execBlinkActive = true; execBlinkStartTime = millis(); 
       } else {
-        DEBUGln(F("[RADIO] Exec Config Keepalive Failed! ---> STATE_NORMAL"));
+        // Изменение: Лог при потере связи с RX в режиме управления
+        DEBUGln(F("[ERROR] Exec Config Keepalive Failed! -> Exit to STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); flashStatusLed(2); 
       }
       pingTimer = millis(); 
@@ -986,11 +969,27 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.36 ==========="));
+    DEBUGln(F("=========== START TX v1.38 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("TX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
     DEBUG(F("RX BIG LED Brightness: ")); DEBUGln(rxSettings.rxPwmledBrightness);
+    
+    DEBUG(F("Bat. Period (ms): ")); DEBUGln(batteryPeriod);
+    DEBUG(F("Wake Hold/Rel (ms): ")); DEBUG(wakeUpHoldTime); DEBUG(F("/")); DEBUGln(wakeUpReleaseWindow);
+    DEBUG(F("Stuck Sleep (ms): ")); DEBUGln(stuckSleepTime);
+    DEBUG(F("Config TO (ms): ")); DEBUGln(configTimeout);
+    DEBUG(F("Sleep LED (ms): ")); DEBUGln(sleepLedDuration);
+    DEBUG(F("TX FB LED Bright: ")); DEBUGln(fbledBrightness);
+    DEBUG(F("TX Ping TO (ms): ")); DEBUGln(pingTimeout);
+    DEBUG(F("TX Big TO (ms): ")); DEBUGln(bigTimeout);
+    DEBUG(F("TX Exec TO (ms): ")); DEBUGln(execTimeout);
+    DEBUG(F("RX Ping TO (ms): ")); DEBUGln(pingTimeoutRX);
+    DEBUG(F("RX En. Big LED: ")); DEBUGln(rxSettings.rxEnableBigLed ? "YES" : "NO");
+    DEBUG(F("RX En. Buzzer: ")); DEBUGln(rxSettings.rxEnableBuzzer ? "YES" : "NO");
+    DEBUG(F("RX Buzzer Vol: ")); DEBUGln(rxSettings.rxBuzzerVolume);
+    DEBUG(F("RX Cutoff (ms): ")); DEBUGln(rxSettings.rxCutoffTime);
+ 
     DEBUGln(F("[STATE] ---> STATE_NORMAL (Boot)"));
  
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH);
@@ -1059,7 +1058,8 @@
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
         currentState = STATE_NORMAL; updateStatusLed(false);
       } else if (millis() - wifiStartTime > configTimeout) {
-        DEBUGln(F("[STATE] ---> STATE_NORMAL (WiFi Timeout)"));
+        // Изменение: Уточнен лог выхода по таймауту WiFi
+        DEBUGln(F("[STATE] WiFi Portal Timeout -> Exit to STATE_NORMAL"));
         stopWiFiPortal();
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
         currentState = STATE_NORMAL; updateStatusLed(false);
