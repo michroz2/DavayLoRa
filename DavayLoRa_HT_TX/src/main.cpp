@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.43 (TX: Восстановление 2х-кратной индикации батареи и полные логи setup)
+ * @version 1.44 (TX: Фикс бага аппаратного ШИМ ESP32 при быстром loop)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -661,12 +661,26 @@
     } // конец условия изменения состояния
  } // конец функции processButton
  
+ // ИСПРАВЛЕНИЕ: Кэширование состояния для защиты от аппаратного ШИМ-спама в быстром цикле ESP32
  void updateStatusLed(bool ledStatus) { 
-    analogWrite(PIN_FB_LED, ledStatus ? fbledBrightness : 0); 
+    static int lastBrightness = -1;
+    int newBrightness = ledStatus ? fbledBrightness : 0;
+    
+    if (lastBrightness != newBrightness) {
+      analogWrite(PIN_FB_LED, newBrightness);
+      lastBrightness = newBrightness;
+    } // конец защиты от спама analogWrite
  } // конец функции updateStatusLed
  
+ // ИСПРАВЛЕНИЕ: Кэширование состояния для защиты от аппаратного ШИМ-спама
  void updateBIGLed(bool ledStatus) { 
-    analogWrite(PIN_BIG_LED, ledStatus * pwmledBrightness); 
+    static int lastBigBrightness = -1;
+    int newBrightness = ledStatus * pwmledBrightness;
+    
+    if (lastBigBrightness != newBrightness) {
+      analogWrite(PIN_BIG_LED, newBrightness); 
+      lastBigBrightness = newBrightness;
+    } // конец защиты от спама analogWrite
  } // конец функции updateBIGLed
  
  void flashStatusLed(byte times) {
@@ -865,7 +879,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.43 ==========="));
+    DEBUGln(F("=========== START TX v1.44 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
