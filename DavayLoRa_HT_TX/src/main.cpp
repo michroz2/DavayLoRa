@@ -1,18 +1,17 @@
 /**
  * @file main.cpp (TX)
- * @version 1.49 (TX: Выделение WebPortal)
+ * @version 1.50 (TX: Выделение RadioComm)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
  #include <Arduino.h>
  #include <esp_sleep.h>
  #include <driver/rtc_io.h>
- #include <SPI.h>
- #include <RadioLib.h>
  
  #include "Battery.h" 
  #include "Config.h"  
- #include "WebPortal.h" // Подключаем наш новый модуль Web Portal
+ #include "WebPortal.h" 
+ #include "RadioComm.h" // Подключаем модуль радиосвязи
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
  #define PIN_BUTTON 7           
@@ -21,18 +20,7 @@
  #define PIN_USER 0             
  #define PIN_VEXT 36            
  
- const int sckPin = 9;
- const int misoPin = 11;
- const int mosiPin = 10;
- const int csPin = 8;
- const int resetPin = 12;
- const int irqPin = 14;
- const int busyPin = 13;
- 
- SX1262 radio = new Module(csPin, irqPin, resetPin, busyPin);
- 
- // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ПРОТОКОЛ =======================
- #define WORK_FREQUENCY 434E6
+ // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И МАКРОСЫ =======================
  
  #define DEBUG_ENABLE
  #ifdef DEBUG_ENABLE
@@ -49,44 +37,9 @@
     if (flg) { tmr = millis(); }\
     if (flg)
  
- #define MAX_ADDRESS 20
- #define DEFAULT_TURNAROUND 300     
- #define WORK_COMM_ATTEMPTS 3       
  #define PING_FLASH 100             
  #define DEBOUNCE_TIME 100          
  
- #define CMD_SIGNAL         208
- #define CMD_SIGNAL_OK      209
- #define CMD_PING           212
- #define CMD_PING_OK        213
- #define CMD_SLEEP          214
- #define CMD_SLEEP_OK       215
- #define CMD_CONFIG         216
- #define CMD_CONFIG_OK      217
- #define CMD_NORMAL_MODE    218
- #define CMD_NORMAL_MODE_OK 219
- #define CMD_SYNC_CONFIG    220
- #define CMD_SYNC_CONFIG_OK 221
- #define CMD_REBOOT         222
- #define CMD_EXEC_CONFIG    223
- #define CMD_EXEC_CONFIG_OK 224
- #define CMD_CYCLE_EXEC     225
- #define CMD_CYCLE_EXEC_OK  226
- 
- byte sndCmd = CMD_PING;
- byte sndData;
- bool wasReceived = false;
- byte cmdExpected = CMD_PING_OK;
- byte rcvAddress = 0;
- byte rcvCmd = 0;
- byte rcvData;
- unsigned long workFrequency = WORK_FREQUENCY;
- 
- long lastSendTime = 0;
- int lastRSSI;
- float lastSNR;
- unsigned long lastTurnaround = DEFAULT_TURNAROUND;
- long lastFrequencyError;
  unsigned long lastButtonTime;
  
  bool currButtonState;
@@ -96,8 +49,6 @@
  unsigned long pingTimer;
  unsigned long pingFlashTimer;
  bool pingFlash;
- 
- volatile bool receivedFlag = false; 
  
  enum SystemState {
     STATE_NORMAL,          
@@ -141,155 +92,6 @@
  void updateStatusLed(bool ledStatus);
  void updateBIGLed(bool ledStatus);
  void flashStatusLed(byte times);
- void transmitPacket(byte* payload, size_t size);
- void sendMessage(byte msgCmd, byte sndData);
- bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes);
- bool syncConfigToRX();
- void setLoRaParams();
- void onReceive(byte* payload, int packetSize);
- void checkReceive();
- 
- // ======================= РАДИООБМЕН =======================
- 
- #if defined(ESP8266) || defined(ESP32)
-    ICACHE_RAM_ATTR
- #endif
- void setFlag(void) {
-    receivedFlag = true;
- } // конец функции прерывания setFlag
- 
- void transmitPacket(byte* payload, size_t size) {
-    DEBUG(F("[RADIO] >>> TX Packet [Size: ")); DEBUG(size); DEBUG(F("]: "));
-    for (size_t i = 0; i < size; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
-    DEBUGln();
- 
-    int state = radio.transmit(payload, size);
-    if (state != RADIOLIB_ERR_NONE) {
-      DEBUG(F("[RADIO] >>> Transmit failed, code: ")); DEBUGln(state);
-    } // конец проверки ошибки передачи
-    
-    lastSendTime = millis();
-    receivedFlag = false; 
-    radio.startReceive(); 
- } // конец функции transmitPacket
- 
- void sendMessage(byte msgCmd, byte sndData) {
-    byte payload[3] = {workAddress, msgCmd, sndData};
-    transmitPacket(payload, 3);
- } // конец функции sendMessage
- 
- void checkReceive() {
-    if (receivedFlag) {
-      receivedFlag = false;
-      byte payload[256];
-      int state = radio.readData(payload, sizeof(payload));
-      
-      if (state == RADIOLIB_ERR_NONE) {
-        int packetSize = radio.getPacketLength();
-        onReceive(payload, packetSize);
-      } // конец проверки успешного приема
-      radio.startReceive();
-    } // конец проверки флага прерывания
- } // конец функции checkReceive
- 
- bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes) {
-    DEBUG(F("[RADIO] Starting CommSession for CMD: ")); DEBUGln(msgCmd);
-    wasReceived = false;
-    cmdExpected = expectedReply; 
-    pingTimer = millis();
-    unsigned long lastSend = millis() - waitMilliseconds; 
-    
-    do {
-      checkReceive();
-      if (millis() - lastSend >= waitMilliseconds) {
-        sendMessage(msgCmd, sndData);
-        lastSend = millis();
-        doTimes--;
-      } // конец интервальной отправки
-    } while ((doTimes > 0) && (!wasReceived)); // конец цикла попыток
-    
-    pingTimer = millis();
-    if (wasReceived) { DEBUGln(F("[RADIO] CommSession SUCCESS")); }
-    else { DEBUGln(F("[RADIO] CommSession FAILED (Timeout/No Reply)")); }
-    return wasReceived; 
- } // конец функции commSession
- 
- bool syncConfigToRX() {
-    DEBUGln(F("[RADIO] --- Syncing Config Struct to RX ---"));
-    DEBUG(F("workAddress: ")); DEBUGln(rxSettings.workAddress);
-    DEBUG(F("rxPwmledBrightness: ")); DEBUGln(rxSettings.rxPwmledBrightness);
-    DEBUG(F("rxBuzzerVolume: ")); DEBUGln(rxSettings.rxBuzzerVolume);
- 
-    wasReceived = false;
-    cmdExpected = CMD_SYNC_CONFIG_OK;
-    
-    byte txBuffer[sizeof(ConfigPacket) + 2];
-    txBuffer[0] = workAddress; 
-    txBuffer[1] = CMD_SYNC_CONFIG;
-    memcpy(&txBuffer[2], &rxSettings, sizeof(ConfigPacket));
- 
-    for (int i=0; i < 3; i++) {
-      transmitPacket(txBuffer, sizeof(txBuffer));
- 
-      unsigned long startWait = millis();
-      while (millis() - startWait < 500) { 
-        checkReceive();
-        if (wasReceived) {
-          DEBUGln(F("[RADIO] --- RX Confirmed Sync! ---"));
-          return true;
-        } // конец условия приема подтверждения
-      } // конец цикла ожидания ответа
-    } // конец цикла попыток синхронизации
-    DEBUGln(F("[RADIO] --- RX Sync Timeout! ---"));
-    return false;
- } // конец функции syncConfigToRX
- 
- unsigned long workingFrequency[MAX_ADDRESS] = {
-    434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
-    434150000, 434270000, 433850000, 433730000, 433970000, 434060000, 434180000,
-    433880000, 433760000, 434090000, 434210000, 433910000, 433790000,
- };
- 
- void setLoRaParams() {
-    DEBUGln("[RADIO] setLoRaParams()");
-    radio.setOutputPower(20);
-    radio.setBandwidth(125.0);
-    radio.setSpreadingFactor(8);
-    radio.setCodingRate(5);
-    radio.setPreambleLength(8);     
-    radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); 
- } // конец функции setLoRaParams
- 
- void onReceive(byte* payload, int packetSize) {
-    DEBUG(F("[RADIO] <<< RX Packet [Size: ")); DEBUG(packetSize); DEBUG(F("]: "));
-    for (int i = 0; i < packetSize; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
-    DEBUGln();
- 
-    if (packetSize != 3) {
-      DEBUGln(F("\t[!] Invalid packet size! Expected 3 bytes."));
-      return;
-    } // конец проверки длины пакета
- 
-    rcvAddress = payload[0];
-    if ((rcvAddress != workAddress) && rcvAddress != 255) { 
-      DEBUGln(F("\t[!] Ignored: Wrong address"));
-      return;
-    } // конец проверки адреса
- 
-    rcvCmd = payload[1];
-    if (rcvCmd != cmdExpected) {
-      DEBUGln("\t[!] Invalid Reply: " + String(rcvCmd) + F(", Expected: ") + String(cmdExpected));
-      return;
-    } // конец проверки команды
-    rcvData = payload[2];
- 
-    lastTurnaround = millis() - lastSendTime;
-    lastRSSI = radio.getRSSI();
-    lastSNR = radio.getSNR();
-    
-    DEBUGln(("\tTurnaround: ") + String(lastTurnaround));
-    wasReceived = true; 
- } // конец функции onReceive
  
  // ======================= БИЗНЕС-ЛОГИКА (СОН, КНОПКА И ПИНГ) =======================
  
@@ -562,7 +364,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.49 ==========="));
+    DEBUGln(F("=========== START TX v1.50 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
