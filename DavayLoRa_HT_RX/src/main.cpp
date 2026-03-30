@@ -1,8 +1,7 @@
 /**
  * @file main.cpp (RX)
- * @version 1.42 (RX: Синхронизация версий и форматирования)
+ * @version 1.43 (RX: Полное логирование setup и перенос Serial.begin)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
- * Особенности: Добавлено строгое комментирование одиночных фигурных скобок для соответствия TX.
  */
 
  #include <Arduino.h>
@@ -618,27 +617,33 @@
  // ======================= СТАРТ И ЦИКЛ =======================
  
  void setup() {
-    pinMode(PIN_REED, INPUT_PULLUP);
-    pinMode(PIN_USER, INPUT_PULLUP); 
-    pinMode(PIN_STATUS_LED, OUTPUT);
-    digitalWrite(PIN_STATUS_LED, LOW);
- 
-    loadConfig();
-    runWakeUpProtection(PIN_REED);
-    delay(2000);
- 
  #ifdef DEBUG_ENABLE
     Serial.begin(115200); 
     while (!Serial); 
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.42 ==========="));
+    DEBUGln(F("=========== START RX v1.43 ==========="));
+    
+    DEBUGln(F("[STATE] Initializing GPIO pins..."));
+    pinMode(PIN_REED, INPUT_PULLUP);
+    pinMode(PIN_USER, INPUT_PULLUP); 
+    pinMode(PIN_STATUS_LED, OUTPUT);
+    digitalWrite(PIN_STATUS_LED, LOW);
+ 
+    DEBUGln(F("[STATE] Loading NVS config..."));
+    loadConfig();
+ 
+    DEBUGln(F("[STATE] Running wake-up protection..."));
+    runWakeUpProtection(PIN_REED);
+    delay(2000);
+ 
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("RX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
     DEBUG(F("RX Buzzer Volume: ")); DEBUGln(buzzerVolume);
     
+    // Вывод параметров NVS
     DEBUG(F("Bat. Period (ms): ")); DEBUGln(batteryPeriod);
     DEBUG(F("Wake Hold/Rel (ms): ")); DEBUG(wakeUpHoldTime); DEBUG(F("/")); DEBUGln(wakeUpReleaseWindow);
     DEBUG(F("Stuck Sleep (ms): ")); DEBUGln(stuckSleepTime);
@@ -651,13 +656,16 @@
  
     DEBUGln(F("[STATE] ---> STATE_NORMAL (Boot)"));
  
+    DEBUGln(F("[STATE] Powering up peripherals (VEXT/ADC)..."));
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH);     
     pinMode(PIN_ADC_CTRL, OUTPUT); digitalWrite(PIN_ADC_CTRL, HIGH); 
     pinMode(PIN_SIGNAL_BUZZERS, OUTPUT); pinMode(PIN_SIGNAL_LED, OUTPUT);
+    pinMode(PIN_BATTERY_LED, OUTPUT); digitalWrite(PIN_BATTERY_LED, 0);
     
     analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
-    digitalWrite(PIN_BATTERY_LED, 0); delay(300);
+    delay(300);
  
+    DEBUGln(F("[ACTION] Testing LEDs and Buzzer..."));
     updateStatusLed(true);
     if (enableBigLed) analogWrite(PIN_SIGNAL_LED, pwmledBrightness);
     if (enableBuzzer) analogWrite(PIN_SIGNAL_BUZZERS, buzzerVolume);
@@ -666,16 +674,27 @@
     analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);  
     delay(1000);
  
+    DEBUGln(F("[ACTION] Checking battery status..."));
     if (measurebattery) {
       isBatteryConnected = testBattery(); 
-    } // конец проверки подключения батареи
-    
-    if (measurebattery && isBatteryConnected) {
-      processBattery(); delay(500); showBatteryVoltage(); delay(2000); showBatteryVoltage(); delay(500);
-    } else if (measurebattery && !isBatteryConnected) { 
-      showNoBattery(); delay(500); 
-    } // конец ветвления индикации батареи
+      if (isBatteryConnected) {
+        DEBUGln(F("[ACTION] Battery connected. Showing voltage (2 times)."));
+        processBattery(); 
+        delay(500); 
+        showBatteryVoltage(); 
+        delay(2000); 
+        showBatteryVoltage(); 
+        delay(500);
+      } else { 
+        DEBUGln(F("[ACTION] No battery detected."));
+        showNoBattery(); 
+        delay(500); 
+      } // конец ветвления индикации подключенной батареи
+    } else {
+      DEBUGln(F("[ACTION] Battery measurement disabled in config."));
+    } // конец ветвления включения замеров батареи
  
+    DEBUGln(F("[STATE] Initializing LoRa radio..."));
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
     workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
     DEBUG(F("[RADIO] LoRa Init on Frequency: ")); DEBUGln(workFrequency);

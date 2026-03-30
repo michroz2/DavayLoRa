@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.42 (TX: Финализация execTimeout, строгий аудит)
+ * @version 1.43 (TX: Восстановление 2х-кратной индикации батареи и полные логи setup)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -19,7 +19,6 @@
  Preferences preferences;
  
  // ======================= ГЛОБАЛЬНЫЕ НАСТРОЙКИ =======================
- // Выравнивание структуры на 1 байт для корректной передачи по радиоканалу
  #pragma pack(push, 1)
  struct ConfigPacket {
     byte workAddress;
@@ -40,7 +39,6 @@
  };
  #pragma pack(pop)
  
- // Экземпляр структуры для хранения настроек приемника перед отправкой
  ConfigPacket rxSettings;
  
  // --- Системные и общие переменные ---
@@ -60,12 +58,12 @@
  unsigned long bigTimeout = 3600000;   
  unsigned long execTimeout = 30000;    
  
- // --- Настройки приемника (для локального хранения/синхронизации) ---
+ // --- Настройки приемника (для синхронизации) ---
  unsigned long pingTimeoutRX = 9000;   
  
  bool isBatteryConnected = false; 
  
- // --- Пороги напряжений для индикации заряда батареи ---
+ // --- Пороги напряжений ---
  #define BATTERY_MIN_VOLTAGE 3.5
  #define BATTERY_VOLTAGE_1 3.5
  #define BATTERY_VOLTAGE_2 3.6
@@ -74,8 +72,6 @@
  #define BATTERY_VOLTAGE_5 4.0
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
- 
- // Распиновка Heltec V3
  #define PIN_BUTTON 7           
  #define PIN_FB_LED 35          
  #define PIN_BIG_LED 41         
@@ -87,7 +83,6 @@
  #define PIN_ADC_CTRL 37        
  #define HELTEC_BATTERY_MULTIPLIER 4.9
  
- // Распиновка встроенного модуля LoRa (SX1262)
  const int sckPin = 9;
  const int misoPin = 11;
  const int mosiPin = 10;
@@ -99,10 +94,8 @@
  SX1262 radio = new Module(csPin, irqPin, resetPin, busyPin);
  
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И ПРОТОКОЛ =======================
- 
  #define WORK_FREQUENCY 434E6
  
- // Макросы для вывода отладочной информации в Serial
  #define DEBUG_ENABLE
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
@@ -112,7 +105,6 @@
  #define DEBUGln(x)
  #endif
  
- // Макрос для выполнения кода с заданным интервалом без блокировки (non-blocking delay)
  #define EVERY_MS(x) \
     static uint32_t tmr;\
     bool flg = millis() - tmr >= (x);\
@@ -120,13 +112,11 @@
     if (flg)
  
  #define MAX_ADDRESS 20
- 
  #define DEFAULT_TURNAROUND 300     
  #define WORK_COMM_ATTEMPTS 3       
  #define PING_FLASH 100             
  #define DEBOUNCE_TIME 100          
  
- // --- Кодовая таблица команд ---
  #define CMD_SIGNAL         208
  #define CMD_SIGNAL_OK      209
  #define CMD_PING           212
@@ -145,7 +135,6 @@
  #define CMD_CYCLE_EXEC     225
  #define CMD_CYCLE_EXEC_OK  226
  
- // Переменные для обработки радиопакетов
  byte sndCmd = CMD_PING;
  byte sndData;
  bool wasReceived = false;
@@ -153,10 +142,8 @@
  byte rcvAddress = 0;
  byte rcvCmd = 0;
  byte rcvData;
- byte workChannel;
  unsigned long workFrequency = WORK_FREQUENCY;
  
- // Статистика радиосвязи
  long lastSendTime = 0;
  int lastRSSI;
  float lastSNR;
@@ -164,7 +151,6 @@
  long lastFrequencyError;
  unsigned long lastButtonTime;
  
- // Состояния кнопки
  bool currButtonState;
  bool prevButtonState;
  bool buttonPressedFirstTime;
@@ -173,18 +159,16 @@
  unsigned long pingFlashTimer;
  bool pingFlash;
  
- volatile bool receivedFlag = false; // Флаг аппаратного прерывания от SX1262
+ volatile bool receivedFlag = false; 
  
- // --- Стейт-машина системы ---
  enum SystemState {
-    STATE_NORMAL,          // Обычный рабочий режим
-    STATE_PREPARATION,     // Режим подготовки (зажата кнопка на 10 сек)
-    STATE_CONFIG_STANDBY,  // Режим ожидания/настройки (после 4 кликов)
-    STATE_EXEC_CONFIG      // Режим быстрой настройки исполнительных элементов (после 3 кликов)
+    STATE_NORMAL,          
+    STATE_PREPARATION,     
+    STATE_CONFIG_STANDBY,  
+    STATE_EXEC_CONFIG      
  };
  SystemState currentState = STATE_NORMAL;
  
- // Таймеры и счетчики для интерфейса управления (клики кнопки)
  unsigned long buttonPressStartTime = 0; 
  unsigned long prepModeTimer = 0;        
  byte prepClickCount = 0;
@@ -254,9 +238,6 @@
  
  // ======================= РАБОТА С ПАМЯТЬЮ NVS =======================
  
- /**
-  * Чтение всех настроек из энергонезависимой памяти (NVS).
-  */
  void loadConfig() {
     DEBUGln(F("--- Loading config from NVS ---"));
     preferences.begin("davaylora", false); 
@@ -287,9 +268,6 @@
     DEBUGln(F("Config loaded."));
  } // конец функции loadConfig
  
- /**
-  * Сохранение локальных настроек TX в энергонезависимую память.
-  */
  void saveConfig() {
     DEBUGln(F("--- Saving config to NVS ---"));
     preferences.begin("davaylora", false);
@@ -868,6 +846,10 @@
     if (voltage > BATTERY_VOLTAGE_5) flashBatteryLEDOnce(); 
  } // конец функции showBatteryVoltage
  
+ void showNoBattery() { 
+    digitalWrite(PIN_BATTERY_LED, 1); delay(2000); digitalWrite(PIN_BATTERY_LED, 0); delay(250); 
+ } // конец функции showNoBattery
+ 
  void flashBatteryLEDOnce() { updateStatusLed(true); delay(250); updateStatusLed(false); delay(250); } // конец функции flashBatteryLEDOnce
  
  void processBattery() { if (batteryVoltage() < BATTERY_MIN_VOLTAGE) stopWorking(); } // конец функции processBattery
@@ -877,22 +859,27 @@
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
-    pinMode(PIN_BUTTON, INPUT_PULLUP);
-    pinMode(PIN_USER, INPUT_PULLUP); 
-    pinMode(PIN_FB_LED, OUTPUT);
-    updateStatusLed(false);
- 
-    loadConfig();
-    runWakeUpProtection(PIN_BUTTON);
-    delay(2000);
- 
  #ifdef DEBUG_ENABLE
     Serial.begin(115200);
     while (!Serial); 
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.42 ==========="));
+    DEBUGln(F("=========== START TX v1.43 ==========="));
+    
+    DEBUGln(F("[STATE] Initializing GPIO pins..."));
+    pinMode(PIN_BUTTON, INPUT_PULLUP);
+    pinMode(PIN_USER, INPUT_PULLUP); 
+    pinMode(PIN_FB_LED, OUTPUT);
+    updateStatusLed(false);
+ 
+    DEBUGln(F("[STATE] Loading NVS config..."));
+    loadConfig();
+ 
+    DEBUGln(F("[STATE] Running wake-up protection..."));
+    runWakeUpProtection(PIN_BUTTON);
+    delay(2000);
+ 
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("TX BIG Brightness: ")); DEBUGln(pwmledBrightness);
     DEBUG(F("TX FB Brightness: ")); DEBUGln(fbledBrightness);
@@ -911,18 +898,37 @@
     
     DEBUGln(F("[STATE] ---> STATE_NORMAL (Boot)"));
  
+    DEBUGln(F("[STATE] Powering up peripherals (VEXT/ADC)..."));
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH);
     pinMode(PIN_ADC_CTRL, OUTPUT); digitalWrite(PIN_ADC_CTRL, HIGH);
     pinMode(PIN_BIG_LED, OUTPUT); analogWrite(PIN_BIG_LED, 0);
+    pinMode(PIN_BATTERY_LED, OUTPUT); digitalWrite(PIN_BATTERY_LED, LOW);
  
-    updateStatusLed(true); analogWrite(PIN_BIG_LED, pwmledBrightness); delay(1000);
-    updateStatusLed(false); analogWrite(PIN_BIG_LED, 0); delay(1000);
+    DEBUGln(F("[ACTION] Testing LEDs..."));
+    updateStatusLed(true); analogWrite(PIN_BIG_LED, pwmledBrightness); digitalWrite(PIN_BATTERY_LED, HIGH); delay(1000);
+    updateStatusLed(false); analogWrite(PIN_BIG_LED, 0); digitalWrite(PIN_BATTERY_LED, LOW); delay(1000);
  
+    DEBUGln(F("[ACTION] Checking battery status..."));
     if (measurebattery) {
       isBatteryConnected = testBattery(); 
-      if (isBatteryConnected) { processBattery(); showBatteryVoltage(); }
-    } // конец условия проверки батареи
+      if (isBatteryConnected) { 
+        DEBUGln(F("[ACTION] Battery connected. Showing voltage (2 times)."));
+        processBattery(); 
+        delay(500); 
+        showBatteryVoltage(); 
+        delay(2000); 
+        showBatteryVoltage(); 
+        delay(500);
+      } else {
+        DEBUGln(F("[ACTION] No battery detected."));
+        showNoBattery(); 
+        delay(500); 
+      } // конец условия обработки подключенной батареи
+    } else {
+      DEBUGln(F("[ACTION] Battery measurement disabled in config."));
+    } // конец условия проверки включения замеров батареи
  
+    DEBUGln(F("[STATE] Initializing LoRa radio..."));
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
     workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
     int state = radio.begin(workFrequency / 1000000.0);
