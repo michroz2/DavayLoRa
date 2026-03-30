@@ -83,7 +83,8 @@ void saveConfig() {
    preferences.putBool("rxEnBigLed", rxSettings.rxEnableBigLed);
    preferences.putInt("rxBigBright", rxSettings.rxPwmledBrightness);
    preferences.putBool("rxEnBuzzer", rxSettings.rxEnableBuzzer);
-   preferences.putInt("rxBuzzerVolume", rxSettings.rxBuzzerVolume);
+   // ИСПРАВЛЕНИЕ: Ключ изменён с "rxBuzzerVolume" на "rxBuzVol"
+   preferences.putInt("rxBuzVol", rxSettings.rxBuzzerVolume);
    preferences.putULong("rxCutoff", rxSettings.rxCutoffTime);
    
    preferences.end();
