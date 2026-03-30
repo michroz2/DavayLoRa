@@ -1,6 +1,6 @@
 /**
  * @file webpage.h
- * @version 1.32
+ * @version 1.36 (Добавлено поле таймаута настроек сигнала)
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
@@ -87,8 +87,10 @@ const char index_html[] PROGMEM = R"rawliteral(
        <input type="number" name="fbledBrightness" value="%TX_FB_LED%" min="0" max="255" required>
        <label>Таймаут Пинга (мс):</label>
        <input type="number" name="pingTimeout" value="%TX_PING%" min="1000" step="100" required>
-       <label>Таймаут отключения Пинга:</label>
+       <label>Таймаут отключения Пинга (мс):</label>
        <input type="number" name="bigTimeout" value="%TX_BIG_TO%" min="10000" step="1000" required>
+       <label>Таймаут настроек сигнала (мс):</label>
+       <input type="number" name="execTimeout" value="%TX_EXEC_TO%" min="10000" step="1000" required>
      </fieldset>
 
      <fieldset>

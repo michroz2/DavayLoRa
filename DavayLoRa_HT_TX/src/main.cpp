@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.35 (TX: Надежный выход из Exec-Config)
+ * @version 1.36 (TX: Таймаут режима Exec-Config)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -58,6 +58,9 @@
  int fbledBrightness = 255;            
  unsigned long pingTimeout = 3000;     
  unsigned long bigTimeout = 3600000;   
+ 
+ // Новое: Таймаут настроек сигнала (мс)
+ unsigned long execTimeout = 30000;    
  
  // --- Настройки приемника (для локального хранения/синхронизации) ---
  unsigned long pingTimeoutRX = 9000;   
@@ -201,6 +204,9 @@
  bool execBlinkActive = false;
  unsigned long execBlinkStartTime = 0; 
  
+ // Новое: Таймер бездействия для режима Exec-Config
+ unsigned long execModeTimer = 0; 
+ 
  // ======================= ПЕРЕМЕННЫЕ WIFI =======================
  WebServer server(80);
  const byte DNS_PORT = 53;
@@ -211,7 +217,6 @@
  bool exitConfigRequested = false;
  
  // --- ПРОТОТИПЫ ---
- // Необходимы для того, чтобы компилятор знал о функциях до их реализации
  void loadConfig();
  void saveConfig();
  void enterDeepSleep();
@@ -254,7 +259,6 @@
  
  /**
   * Чтение всех настроек из энергонезависимой памяти (NVS).
-  * Если ключ не найден, применяется значение по умолчанию (второй аргумент).
   */
  void loadConfig() {
     DEBUGln(F("--- Loading config from NVS ---"));
@@ -274,6 +278,9 @@
     pingTimeout = preferences.getULong("pingTimeout", 3000);
     bigTimeout = preferences.getULong("bigTimeout", 3600000);
     
+    // Изменение: Загрузка таймаута режима Exec-Config
+    execTimeout = preferences.getULong("execTo", 30000); 
+    
     pingTimeoutRX = preferences.getULong("pingRx", 9000); 
     rxSettings.rxEnableBigLed = preferences.getBool("rxEnBigLed", true);
     rxSettings.rxPwmledBrightness = preferences.getInt("rxBigBright", 35);
@@ -283,7 +290,7 @@
  
     preferences.end();
     DEBUGln(F("Config loaded."));
- }
+ } // конец функции loadConfig
  
  /**
   * Сохранение локальных настроек TX в энергонезависимую память.
@@ -306,6 +313,9 @@
     preferences.putULong("pingTimeout", pingTimeout);
     preferences.putULong("bigTimeout", bigTimeout);
     
+    // Изменение: Сохранение таймаута режима Exec-Config
+    preferences.putULong("execTo", execTimeout); 
+    
     preferences.putULong("pingRx", pingTimeoutRX); 
     preferences.putBool("rxEnBigLed", rxSettings.rxEnableBigLed);
     preferences.putInt("rxBigBright", rxSettings.rxPwmledBrightness);
@@ -315,11 +325,10 @@
     
     preferences.end();
     DEBUGln(F("Config saved."));
- }
+ } // конец функции saveConfig
  
  // ======================= РАДИООБМЕН =======================
  
- // Обработчик прерывания для пина DIO1 (срабатывает при приеме пакета)
  #if defined(ESP8266) || defined(ESP32)
     ICACHE_RAM_ATTR
  #endif
@@ -327,9 +336,6 @@
     receivedFlag = true;
  }
  
- /**
-  * Физическая отправка пакета через LoRa
-  */
  void transmitPacket(byte* payload, size_t size) {
     DEBUG(F("[RADIO] >>> TX Packet [Size: ")); DEBUG(size); DEBUG(F("]: "));
     for (size_t i = 0; i < size; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
@@ -345,17 +351,11 @@
     radio.startReceive(); 
  }
  
- /**
-  * Обертка для создания и отправки стандартного 3-байтового пакета
-  */
  void sendMessage(byte msgCmd, byte sndData) {
     byte payload[3] = {workAddress, msgCmd, sndData};
     transmitPacket(payload, 3);
  }
  
- /**
-  * Проверка флага прерывания и чтение данных из буфера радиомодуля
-  */
  void checkReceive() {
     if (receivedFlag) {
       receivedFlag = false;
@@ -370,10 +370,6 @@
     }
  }
  
- /**
-  * Синхронная сессия обмена с ожиданием конкретного ответа (expectedReply)
-  * Повторяет отправку doTimes раз при отсутствии подтверждения.
-  */
  bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes) {
     DEBUG(F("[RADIO] Starting CommSession for CMD: ")); DEBUGln(msgCmd);
     wasReceived = false;
@@ -394,9 +390,6 @@
     return wasReceived; 
  }
  
- /**
-  * Сериализация и отправка структуры ConfigPacket на RX
-  */
  bool syncConfigToRX() {
     DEBUGln(F("\n[RADIO] --- Syncing Config Struct to RX ---"));
     DEBUG(F("workAddress: ")); DEBUGln(rxSettings.workAddress);
@@ -427,16 +420,12 @@
     return false;
  }
  
- // Таблица частот, привязанная к адресам (workAddress)
  unsigned long workingFrequency[MAX_ADDRESS] = {
     434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
     434150000, 434270000, 433850000, 433730000, 433970000, 434060000, 434180000,
     433880000, 433760000, 434090000, 434210000, 433910000, 433790000,
  };
  
- /**
-  * Базовая конфигурация параметров LoRa для обеспечения дальнобойности
-  */
  void setLoRaParams() {
     DEBUGln("[RADIO] setLoRaParams()");
     radio.setOutputPower(20);
@@ -447,9 +436,6 @@
     radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); 
  }
  
- /**
-  * Парсинг входящего пакета, проверка адреса и ожидаемой команды
-  */
  void onReceive(byte* payload, int packetSize) {
     DEBUG(F("[RADIO] <<< RX Packet [Size: ")); DEBUG(packetSize); DEBUG(F("]: "));
     for (int i = 0; i < packetSize; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
@@ -487,10 +473,6 @@
  
  // ======================= WIFI & CAPTIVE PORTAL =======================
  
- /**
-  * Формирование главной HTML-страницы.
-  * Плейсхолдеры заменяются на текущие значения из переменных.
-  */
  void handleRoot() {
     DEBUGln(F("[WIFI] Client requested root page"));
     String html = String(index_html);
@@ -512,6 +494,9 @@
     html.replace("%TX_FB_LED%", String(fbledBrightness));
     html.replace("%TX_PING%", String(pingTimeout));
     html.replace("%TX_BIG_TO%", String(bigTimeout));
+    
+    // Изменение: Передача значения таймаута в HTML
+    html.replace("%TX_EXEC_TO%", String(execTimeout));
  
     html.replace("%RX_BIG_EN%", rxSettings.rxEnableBigLed ? "checked" : "");
     html.replace("%RX_BIG_LED%", String(rxSettings.rxPwmledBrightness));
@@ -521,13 +506,8 @@
     html.replace("%RX_PING%", String(pingTimeoutRX));
  
     server.send(200, "text/html", html);
- }
+ } // конец функции handleRoot
  
- /**
-  * Обработка нажатия кнопки "Сохранить" на Web-странице.
-  * Данные собираются, упаковываются, отправляются на RX, 
-  * и в случае успеха сохраняются локально.
-  */
  void handleSave() {
     DEBUGln(F("\n[WIFI] === Web UI: Save Requested ==="));
     
@@ -566,6 +546,10 @@
       fbledBrightness = server.arg("fbledBrightness").toInt();
       pingTimeout = server.arg("pingTimeout").toInt();
       bigTimeout = server.arg("bigTimeout").toInt();
+      
+      // Изменение: Чтение таймаута Exec-Config из веб-формы
+      execTimeout = server.arg("execTimeout").toInt();
+      
       pingTimeoutRX = rxSettings.pingTimeoutRX;
  
       saveConfig();
@@ -583,25 +567,18 @@
       err += "<br><a href='/' style='color:#4CAF50;text-decoration:none;border:1px solid #4CAF50;padding:10px 20px;border-radius:5px;'>Попробовать снова</a></body></html>";
       server.send(200, "text/html", err);
     }
- }
+ } // конец функции handleSave
  
- /**
-  * Отмена режима конфигурации (возврат в нормальный режим)
-  */
  void handleCancel() {
     DEBUGln(F("[WIFI] Received Cancel Request from browser"));
     server.send(200, "text/html", "<html><body style='background:#121212;color:#fff;text-align:center;padding:50px;'><h2>🚪 Отмена...</h2><p>Интерфейс закрыт. Пульт возвращается в рабочий режим.</p></body></html>");
     exitConfigRequested = true; 
  }
  
- /**
-  * Поднятие точки доступа WiFi и запуск DNS/Web серверов
-  */
  void startWiFiPortal() {
     DEBUGln(F("[WIFI] Starting WiFi AP (Captive Portal)..."));
     WiFi.mode(WIFI_AP);
     
-    // Динамическое имя сети на основе адреса устройства (изменения версии 1.31)
     String ssidName = "DavayLoRa_" + String(workAddress);
     WiFi.softAP(ssidName.c_str());
     
@@ -642,21 +619,16 @@
  
  // ======================= БИЗНЕС-ЛОГИКА (СОН, КНОПКА И ПИНГ) =======================
  
- /**
-  * Перевод микроконтроллера в режим максимального энергосбережения
-  */
  void enterDeepSleep() {
     DEBUGln(F("[STATE] ---> ENTERING DEEP SLEEP"));
     if (isWifiActive) stopWiFiPortal(); 
     
     radio.sleep();
     SPI.end();
-    // Перевод всех SPI пинов в INPUT для снижения токов утечки
     pinMode(csPin, INPUT); pinMode(mosiPin, INPUT); pinMode(misoPin, INPUT);
     pinMode(sckPin, INPUT); pinMode(resetPin, INPUT); pinMode(busyPin, INPUT);
     pinMode(irqPin, INPUT);
     
-    // Отключение питания периферии (VEXT)
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH); 
     pinMode(PIN_ADC_CTRL, OUTPUT); digitalWrite(PIN_ADC_CTRL, HIGH);
     
@@ -667,7 +639,6 @@
     rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
     rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
     
-    // Защита от залипания кнопки перед сном
     if (digitalRead(PIN_BUTTON) == LOW) {
       DEBUGln(F("[STATE] Button is STUCK. Sleeping with timer..."));
       esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
@@ -679,10 +650,6 @@
     esp_deep_sleep_start();
  }
  
- /**
-  * Защита от случайных нажатий (в кармане). Требует удержания кнопки 
-  * заданное время, а затем отпускания в строго определенном окне.
-  */
  void runWakeUpProtection(uint8_t wakeupPin) {
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
     if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) { enterDeepSleep(); }
@@ -691,7 +658,6 @@
       DEBUGln(F("[STATE] Woke up from Deep Sleep. Checking protection..."));
       updateStatusLed(true);
       unsigned long startHold = millis();
-      // Стадия 1: Ожидание удержания
       while (millis() - startHold < wakeUpHoldTime) {
         if (digitalRead(wakeupPin) == HIGH) { 
           DEBUGln(F("[ACTION] Button released too early. Going back to sleep."));
@@ -703,7 +669,6 @@
       DEBUGln(F("[STATE] Waiting for button release in window..."));
       unsigned long startReleaseWindow = millis();
       bool releasedInWindow = false;
-      // Стадия 2: Окно отпускания (сопровождается миганием)
       while (millis() - startReleaseWindow < wakeUpReleaseWindow) {
         updateStatusLed((millis() % 200) < 100); 
         if (digitalRead(wakeupPin) == HIGH) { 
@@ -713,7 +678,6 @@
         delay(10);
       }
       
-      // Если не отпустили вовремя - снова спать
       if (!releasedInWindow) { 
         DEBUGln(F("[ACTION] Button held too long. Going back to sleep."));
         updateStatusLed(false); enterDeepSleep(); 
@@ -722,9 +686,6 @@
     }
  }
  
- /**
-  * Централизованный уход в сон (выключение и TX, и RX)
-  */
  void sleepSystem() {
     DEBUGln(F("[ACTION] Sending Centralized SLEEP Command"));
     if (commSession(CMD_SLEEP, 1, CMD_SLEEP_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
@@ -734,14 +695,10 @@
        flashStatusLed(2); 
     }
     
-    // Прощальная вспышка светодиода
     updateStatusLed(true); delay(sleepLedDuration); updateStatusLed(false);
     enterDeepSleep();
  }
  
- /**
-  * Обработка изменения физического состояния главной кнопки
-  */
  void processButton() {
     prevButtonState = currButtonState;
     currButtonState = !digitalRead(PIN_BUTTON); 
@@ -758,16 +715,15 @@
             updateStatusLed(true); updateBIGLed(true);    
           } else { updateBIGLed(false); flashStatusLed(2); }
         } else if (currentState == STATE_PREPARATION) {
-          // Подсчет кликов в режиме подготовки
           prepClickCount++; lastPrepClickTime = millis(); prepModeTimer = millis(); 
           DEBUG(F("[ACTION] Prep Click Count: ")); DEBUGln(prepClickCount);
         } else if (currentState == STATE_CONFIG_STANDBY) {
-          // Подсчет кликов в режиме конфигурации
           configClickCount++; lastConfigClickTime = millis();
           DEBUG(F("[ACTION] Config Click Count: ")); DEBUGln(configClickCount);
         } else if (currentState == STATE_EXEC_CONFIG) {
-          // Подсчет кликов в режиме управления исполнительными элементами
           execClickCount++; lastExecClickTime = millis();
+          // Изменение: Сброс таймера бездействия при клике пользователя
+          execModeTimer = millis(); 
           DEBUG(F("[ACTION] Exec Config Click Count: ")); DEBUGln(execClickCount);
         }
       } else { // Кнопка отпущена
@@ -777,11 +733,8 @@
         }
       }
     }
- }
+ } // конец функции processButton
  
- /**
-  * Визуальный паттерн для режима конфигурации (тройная вспышка)
-  */
  void processConfigLed() {
     if (!configBlinkActive) return;
     unsigned long elapsed = millis() - configBlinkStartTime;
@@ -793,9 +746,6 @@
     else { updateStatusLed(false); configBlinkActive = false; }
  }
  
- /**
-  * Визуальный паттерн для режима исполнительных элементов (двойная вспышка)
-  */
  void processExecConfigLed() {
     if (!execBlinkActive) return;
     unsigned long elapsed = millis() - execBlinkStartTime;
@@ -805,18 +755,13 @@
     else { updateStatusLed(false); execBlinkActive = false; }
  }
  
- /**
-  * Обработка логики в режиме подготовки (после 10 секундного удержания)
-  */
  void processPreparationMode() {
-    // Быстрое мигание
     EVERY_MS(166) {
       static bool prepLedState = false;
       prepLedState = !prepLedState;
       updateStatusLed(prepLedState);
     }
  
-    // Если были клики и прошло время паузы - принимаем решение
     if (prepClickCount > 0 && (millis() - lastPrepClickTime > 600)) {
       if (prepClickCount == 2) { 
         DEBUGln(F("[ACTION] 2 clicks -> Centralized Sleep"));
@@ -829,6 +774,8 @@
         }
         currentState = STATE_EXEC_CONFIG;
         pingTimer = millis();
+        // Изменение: Запуск таймера таймаута бездействия при входе в режим
+        execModeTimer = millis(); 
         execBlinkActive = true; execBlinkStartTime = millis(); 
         execClickCount = 0;
       }
@@ -849,16 +796,12 @@
       prepClickCount = 0; 
     }
  
-    // Таймаут режима подготовки (возврат к норме)
     if (millis() - prepModeTimer > 10000 && currentState == STATE_PREPARATION) {
       DEBUGln(F("[STATE] Prep mode timeout ---> STATE_NORMAL"));
       currentState = STATE_NORMAL; prepClickCount = 0; updateStatusLed(false);
     }
- }
+ } // конец функции processPreparationMode
  
- /**
-  * Обработка логики в режиме ожидания конфигурации (развертывание WiFi)
-  */
  void processConfigStandby() {
     processConfigLed();
  
@@ -875,7 +818,6 @@
       configClickCount = 0;
     }
  
-    // Поддержание режима CONFIG на стороне RX
     if ((millis() - pingTimer) > pingTimeout) {
       if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
         configBlinkActive = true; configBlinkStartTime = millis(); 
@@ -888,11 +830,17 @@
     }
  }
  
- /**
-  * Обработка логики в режиме настройки исполнительных элементов (управление LED/Buzzer)
-  */
  void processExecConfigStandby() {
     processExecConfigLed();
+ 
+    // Изменение: Добавлен блок контроля таймаута бездействия пользователя
+    if (millis() - execModeTimer > execTimeout) {
+      DEBUGln(F("[STATE] Exec Config Inactivity Timeout ---> STATE_NORMAL"));
+      commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
+      currentState = STATE_NORMAL; 
+      updateStatusLed(false);
+      execClickCount = 0;
+    } // конец if проверки таймаута Exec Config
  
     if (execClickCount > 0 && (millis() - lastExecClickTime > 600)) {
       if (execClickCount == 2) {
@@ -902,7 +850,6 @@
       } else if (execClickCount == 1) {
         DEBUGln(F("[ACTION] 1 click -> Cycle Actuators"));
         if (commSession(CMD_CYCLE_EXEC, 1, CMD_CYCLE_EXEC_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
-           // rcvData содержит новое состояние с приемника (бит 0 - LED, бит 1 - Buzzer)
            rxSettings.rxEnableBigLed = (rcvData & 0x01);
            rxSettings.rxEnableBuzzer = (rcvData & 0x02) >> 1;
            saveConfig();
@@ -913,7 +860,6 @@
            flashStatusLed(2);
         }
       } else {
-        // НОВОЕ: Обработка любых других кликов как отмена
         DEBUGln(F("[ACTION] Other click count -> Exit Exec Config ---> STATE_NORMAL"));
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 2 * lastTurnaround, WORK_COMM_ATTEMPTS);
         currentState = STATE_NORMAL; updateStatusLed(false);
@@ -921,7 +867,6 @@
       execClickCount = 0;
     }
  
-    // Поддержание режима EXEC_CONFIG на стороне RX
     if ((millis() - pingTimer) > pingTimeout) {
       if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 5 * lastTurnaround, WORK_COMM_ATTEMPTS)) {
         execBlinkActive = true; execBlinkStartTime = millis(); 
@@ -931,11 +876,8 @@
       }
       pingTimer = millis(); 
     }
- }
+ } // конец функции processExecConfigStandby
  
- /**
-  * Периодическая проверка связи (Heartbeat) в нормальном режиме
-  */
  void processPing() {
     if (!buttonPressedFirstTime) return; 
     
@@ -957,9 +899,6 @@
     }
  }
  
- /**
-  * Обработка дополнительной пользовательской кнопки (PRG/USER пин 0)
-  */
  void processUserButton() {
     static unsigned long userButtonTimer = 0;
     if (digitalRead(PIN_USER) == LOW) { 
@@ -998,7 +937,6 @@
       if ((currentVBat > 4.3) || (currentVBat < 2.5)) return false;
       delay(150);
     }
-    // Проверка на нестабильность (шум)
     if ((maxV - minV) > 0.05) return false;
     return true;
  }
@@ -1048,7 +986,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.35 ==========="));
+    DEBUGln(F("=========== START TX v1.36 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("TX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
@@ -1060,7 +998,6 @@
     pinMode(PIN_BIG_LED, OUTPUT); pinMode(PIN_BATTERY_LED, OUTPUT);
     analogWrite(PIN_BIG_LED, 0); digitalWrite(PIN_BATTERY_LED, 0); delay(300);
  
-    // Визуальное приветствие
     updateStatusLed(true); analogWrite(PIN_BIG_LED, pwmledBrightness); digitalWrite(PIN_FB_LED, HIGH); digitalWrite(PIN_BATTERY_LED, HIGH); delay(1000);
     updateStatusLed(false); analogWrite(PIN_BIG_LED, 0); digitalWrite(PIN_FB_LED, LOW); digitalWrite(PIN_BATTERY_LED, LOW); delay(1000);
  
@@ -1074,7 +1011,6 @@
       showNoBattery(); delay(500); 
     }
  
-    // Инициализация LoRa
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
     workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
     DEBUG(F("[RADIO] LoRa Init on Frequency: ")); DEBUGln(workFrequency);
@@ -1090,7 +1026,7 @@
     radio.startReceive();
     delay(100);
     DEBUGln(F("[STATE] Setup complete, waiting for input..."));
- }
+ } // конец функции setup
  
  void loop() {
     checkReceive(); 
@@ -1098,7 +1034,6 @@
     if ((millis() - lastButtonTime) > DEBOUNCE_TIME) processButton();
     processUserButton(); 
     
-    // Отслеживание удержания кнопки (10 сек) для перехода в режим подготовки
     if (currentState == STATE_NORMAL && currButtonState) {
       if (millis() - buttonPressStartTime > 10000) {
         DEBUGln(F("\n[STATE] ---> STATE_PREPARATION"));
@@ -1107,18 +1042,15 @@
       }
     }
  
-    // Роутинг логики в зависимости от текущего состояния стейт-машины
     if (currentState == STATE_NORMAL) processPing();
     else if (currentState == STATE_PREPARATION) processPreparationMode();
     else if (currentState == STATE_CONFIG_STANDBY) processConfigStandby();
     else if (currentState == STATE_EXEC_CONFIG) processExecConfigStandby();
     
-    // Обработка WiFi если он активен
     if (isWifiActive) {
       dnsServer.processNextRequest();
       server.handleClient();
       
-      // Выход по отмене или таймауту
       if (exitConfigRequested) {
         delay(500); 
         exitConfigRequested = false;
@@ -1137,4 +1069,4 @@
     EVERY_MS(batteryPeriod) { 
       if (measurebattery && isBatteryConnected) processBattery(); 
     }
- }
+ } // конец функции loop
