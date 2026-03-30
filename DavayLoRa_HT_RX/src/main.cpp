@@ -1,8 +1,8 @@
 /**
  * @file main.cpp (RX)
- * @version 1.38 (RX: Логирование таймаутов всех режимов)
+ * @version 1.42 (RX: Синхронизация версий и форматирования)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
- * Особенности: Failsafe (защита при потере связи), режим приема конфигурации по воздуху.
+ * Особенности: Добавлено строгое комментирование одиночных фигурных скобок для соответствия TX.
  */
 
  #include <Arduino.h>
@@ -243,7 +243,9 @@
  #if defined(ESP8266) || defined(ESP32)
     ICACHE_RAM_ATTR
  #endif
- void setFlag(void) { receivedFlag = true; }
+ void setFlag(void) { 
+    receivedFlag = true; 
+ } // конец функции прерывания setFlag
  
  void setLoRaParams() {
     DEBUGln("[RADIO] setLoRaParams()");
@@ -253,7 +255,7 @@
     radio.setCodingRate(5);                       
     radio.setPreambleLength(8);                   
     radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); 
- }
+ } // конец функции setLoRaParams
  
  void transmitPacket(byte* payload, size_t size) {
     DEBUG(F("[RADIO] >>> TX Packet [Size: ")); DEBUG(size); DEBUG(F("]: "));
@@ -263,18 +265,18 @@
     int state = radio.transmit(payload, size);
     if (state != RADIOLIB_ERR_NONE) {
       DEBUG(F("[RADIO] >>> Transmit failed, code: ")); DEBUGln(state);
-    }
+    } // конец проверки ошибки передачи
     
     lastSendTime = millis();
     pingTimeOutLastTime = lastSendTime; 
     receivedFlag = false; 
     radio.startReceive(); 
- }
+ } // конец функции transmitPacket
  
  void sendMessage(byte msgAddr, byte msgCmd, byte msgData) {
     byte payload[3] = {msgAddr, msgCmd, msgData}; 
     transmitPacket(payload, 3);                         
- }
+ } // конец функции sendMessage
  
  void checkReceive() {
     if (receivedFlag) {
@@ -283,10 +285,10 @@
       int state = radio.readData(payload, sizeof(payload));
       if (state == RADIOLIB_ERR_NONE) {
         onReceive(payload, radio.getPacketLength());           
-      }
+      } // конец проверки успешного приема
       radio.startReceive();                       
-    }
- }
+    } // конец проверки флага прерывания
+ } // конец функции checkReceive
  
  void onReceive(byte* payload, int packetSize) {
     DEBUG(F("[RADIO] <<< RX Packet [Size: ")); DEBUG(packetSize); DEBUG(F("]: "));
@@ -297,7 +299,7 @@
     if (rcvAddress != workAddress) {
       DEBUGln(F("\t[!] Ignored: Wrong address"));
       return;
-    }
+    } // конец проверки адреса
  
     if (packetSize == 3) {
       rcvCmd = payload[1];
@@ -307,7 +309,7 @@
         DEBUGln(F("\n[ACTION] !!! CMD_REBOOT RECEIVED. Restarting in 500ms !!!"));
         delay(500);
         ESP.restart();
-      }
+      } // конец обработки команды перезагрузки
     } 
     else if (packetSize == (sizeof(ConfigPacket) + 2) && payload[1] == CMD_SYNC_CONFIG) {
       DEBUGln(F("\n[RADIO] <<< Received Config Struct from TX!"));
@@ -324,7 +326,7 @@
     } 
     else {
       DEBUGln(F("\t[!] Invalid packet size or command!"));
-    }
+    } // конец проверки длины пакета
  } // конец функции onReceive
  
  // ======================= БИЗНЕС-ЛОГИКА =======================
@@ -353,13 +355,14 @@
     } else {
       DEBUGln(F("[STATE] Normal sleep. Wakeup on EXT0 (Reed). Good night!"));
       esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_REED, 0);
-    }
+    } // конец проверки залипания геркона
     esp_deep_sleep_start();
  } // конец функции enterDeepSleep
  
  void runWakeUpProtection(uint8_t wakeupPin) {
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
     if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) enterDeepSleep(); 
+    
     if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
       DEBUGln(F("[STATE] Woke up from Deep Sleep. Checking protection..."));
       updateStatusLed(true);
@@ -368,9 +371,9 @@
         if (digitalRead(wakeupPin) == HIGH) { 
           DEBUGln(F("[ACTION] Magnet released too early. Going back to sleep."));
           updateStatusLed(false); enterDeepSleep(); 
-        }
+        } // конец проверки раннего отпускания
         delay(10);
-      }
+      } // конец цикла удержания
       
       DEBUGln(F("[STATE] Waiting for magnet release in window..."));
       unsigned long startReleaseWindow = millis();
@@ -380,21 +383,22 @@
         if (digitalRead(wakeupPin) == HIGH) { 
           DEBUGln(F("[ACTION] Magnet released! WAKE UP SUCCESS."));
           releasedInWindow = true; break; 
-        }
+        } // конец проверки отпускания в окне
         delay(10);
-      }
+      } // конец цикла окна отпускания
+      
       if (!releasedInWindow) { 
         DEBUGln(F("[ACTION] Magnet held too long. Going back to sleep."));
         updateStatusLed(false); enterDeepSleep(); 
-      }
+      } // конец условия ошибки окна отпускания
       updateStatusLed(false); 
-    }
- }
+    } // конец проверки причины просыпания EXT0
+ } // конец функции runWakeUpProtection
  
  void goToSleep() {
     updateStatusLed(true); delay(sleepLedDuration); updateStatusLed(false);
     enterDeepSleep();
- }
+ } // конец функции goToSleep
  
  void processTimeOut() {
     if ((millis() - pingTimeOutLastTime) > pingTimeout) {
@@ -406,16 +410,14 @@
         flashStatusLed(2); 
       }
       else if (currentState == STATE_CONFIG) { 
-        // Изменение: Уточнен лог таймаута связи в режиме конфигурации
         DEBUGln(F("[STATE] Config Timeout (No Heartbeat) -> STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); 
       }
       else if (currentState == STATE_EXEC_CONFIG) { 
-        // Изменение: Уточнен лог таймаута связи в режиме управления
         DEBUGln(F("[STATE] Exec Config Timeout (No Heartbeat) -> STATE_NORMAL"));
         currentState = STATE_NORMAL; updateStatusLed(false); 
-      }
-    }
+      } // конец ветвления состояний при таймауте
+    } // конец проверки интервала таймаута
  } // конец функции processTimeOut
  
  void processCommand() {
@@ -434,7 +436,7 @@
         updateStatusLed(false);
         sendMessage(rcvAddress, CMD_PING_OK, signalStatus);     
         break;
-      }
+      } // конец обработки CMD_PING
       case CMD_SLEEP:
         sendMessage(rcvAddress, CMD_SLEEP_OK, 1); 
         delay(100); goToSleep();
@@ -477,7 +479,7 @@
         delay(1000); 
         signalStatus = false; processSignal();
         break;
-      }
+      } // конец обработки CMD_CYCLE_EXEC
       case CMD_NORMAL_MODE:
         DEBUGln(F("[STATE] ---> STATE_NORMAL"));
         currentState = STATE_NORMAL;
@@ -485,7 +487,7 @@
         updateStatusLed(false);
         sendMessage(rcvAddress, CMD_NORMAL_MODE_OK, 1);
         break;
-    }
+    } // конец switch
     rcvCmd = 0; 
  } // конец функции processCommand
  
@@ -498,7 +500,7 @@
     else analogWrite(PIN_SIGNAL_BUZZERS, 0);
     
     digitalWrite(PIN_STATUS_LED, signalStatus);
- }
+ } // конец функции processSignal
  
  void processConfigLed() {
     if (!configBlinkActive) return;
@@ -509,7 +511,7 @@
     else if (elapsed < 400) updateStatusLed(false); 
     else if (elapsed < 500) updateStatusLed(true); 
     else { updateStatusLed(false); configBlinkActive = false; }
- }
+ } // конец функции processConfigLed
  
  void processExecConfigLed() {
     if (!execBlinkActive) return;
@@ -518,7 +520,7 @@
     else if (elapsed < 200) updateStatusLed(false); 
     else if (elapsed < 300) updateStatusLed(true); 
     else { updateStatusLed(false); execBlinkActive = false; }
- }
+ } // конец функции processExecConfigLed
  
  void processCutoff() {
     if (signalStatus && (millis() - cutoffTimer > cutoffTime)) {
@@ -526,8 +528,8 @@
       signalStatus = 0;
       analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
       digitalWrite(PIN_STATUS_LED, 0);
-    }
- }
+    } // конец проверки таймаута отсечки
+ } // конец функции processCutoff
  
  void processUserButton() {
     static unsigned long userButtonTimer = 0;
@@ -536,20 +538,29 @@
       else if (millis() - userButtonTimer > 5000) {
         DEBUGln(F("[ACTION] USER button held 5s -> Local Sleep"));
         goToSleep(); 
-      }
+      } // конец проверки удержания USER
     } else userButtonTimer = 0; 
- }
+ } // конец функции processUserButton
  
- void updateStatusLed(bool ledStatus) { digitalWrite(PIN_STATUS_LED, ledStatus); }
- void flashStatusLEDOnce() { digitalWrite(PIN_STATUS_LED, 1); delay(250); digitalWrite(PIN_STATUS_LED, 0); delay(250); }
- void flashStatusLed(byte times) { for (int i = 0; i < times; i++) flashStatusLEDOnce(); delay(200); }
+ void updateStatusLed(bool ledStatus) { 
+    digitalWrite(PIN_STATUS_LED, ledStatus); 
+ } // конец функции updateStatusLed
+ 
+ void flashStatusLEDOnce() { 
+    digitalWrite(PIN_STATUS_LED, 1); delay(250); digitalWrite(PIN_STATUS_LED, 0); delay(250); 
+ } // конец функции flashStatusLEDOnce
+ 
+ void flashStatusLed(byte times) { 
+    for (int i = 0; i < times; i++) flashStatusLEDOnce(); 
+    delay(200); 
+ } // конец функции flashStatusLed
  
  // ======================= БАТАРЕЯ =======================
  
- bool testBattery() {
+ bool testBattery() { 
     if (batteryVoltageOK(5)) return true;
     return false;
- }
+ } // конец функции testBattery
  
  bool batteryVoltageOK(byte tries) {
     float minV = 5.0, maxV = 0.0;
@@ -559,10 +570,10 @@
       if (currentVBat > maxV) maxV = currentVBat; 
       if ((currentVBat > 4.5) || (currentVBat < 2.5)) return false;
       delay(150);
-    }
+    } // конец цикла замеров
     if ((maxV - minV) > 0.05) return false;
     return true;
- }
+ } // конец функции batteryVoltageOK
  
  float batteryVoltage() {
     digitalWrite(PIN_ADC_CTRL, LOW); delay(10);                       
@@ -570,9 +581,11 @@
     digitalWrite(PIN_ADC_CTRL, HIGH); 
     measuredvbat *= 3.3; measuredvbat /= 4095.0; measuredvbat *= HELTEC_BATTERY_MULTIPLIER; 
     return measuredvbat;
- }
+ } // конец функции batteryVoltage
  
- void processBattery() { if (batteryVoltage() < BATTERY_MIN_VOLTAGE) stopWorking(); }
+ void processBattery() { 
+    if (batteryVoltage() < BATTERY_MIN_VOLTAGE) stopWorking(); 
+ } // конец функции processBattery
  
  void showBatteryVoltage() {
     float voltage = batteryVoltage();
@@ -581,16 +594,26 @@
     if (voltage > BATTERY_VOLTAGE_3) flashBatteryLEDOnce(); 
     if (voltage > BATTERY_VOLTAGE_4) flashBatteryLEDOnce(); 
     if (voltage > BATTERY_VOLTAGE_5) flashBatteryLEDOnce(); 
- }
+ } // конец функции showBatteryVoltage
  
- void showNoBattery() { digitalWrite(PIN_BATTERY_LED, 1); delay(2000); digitalWrite(PIN_BATTERY_LED, 0); delay(250); }
- void flashBatteryLEDOnce() { digitalWrite(PIN_BATTERY_LED, 1); delay(250); digitalWrite(PIN_BATTERY_LED, 0); delay(250); }
- void flashLedBattery(byte times) { for (int i = 0; i < times; i++) flashBatteryLEDOnce(); delay(200); }
+ void showNoBattery() { 
+    digitalWrite(PIN_BATTERY_LED, 1); delay(2000); digitalWrite(PIN_BATTERY_LED, 0); delay(250); 
+ } // конец функции showNoBattery
+ 
+ void flashBatteryLEDOnce() { 
+    digitalWrite(PIN_BATTERY_LED, 1); delay(250); digitalWrite(PIN_BATTERY_LED, 0); delay(250); 
+ } // конец функции flashBatteryLEDOnce
+ 
+ void flashLedBattery(byte times) { 
+    for (int i = 0; i < times; i++) flashBatteryLEDOnce(); 
+    delay(200); 
+ } // конец функции flashLedBattery
+ 
  void stopWorking() { 
     DEBUGln(F("[STATE] BATTERY DEAD! Stopping..."));
     flashLedBattery(7); digitalWrite(PIN_BATTERY_LED, 0); delay(3000); 
     flashLedBattery(7); digitalWrite(PIN_BATTERY_LED, 0); enterDeepSleep(); 
- }
+ } // конец функции stopWorking
  
  // ======================= СТАРТ И ЦИКЛ =======================
  
@@ -610,7 +633,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.38 ==========="));
+    DEBUGln(F("=========== START RX v1.42 ==========="));
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("Battery Check Enabled: ")); DEBUGln(measurebattery ? "YES" : "NO");
     DEBUG(F("RX BIG LED Brightness: ")); DEBUGln(pwmledBrightness);
@@ -645,13 +668,13 @@
  
     if (measurebattery) {
       isBatteryConnected = testBattery(); 
-    }
+    } // конец проверки подключения батареи
     
     if (measurebattery && isBatteryConnected) {
       processBattery(); delay(500); showBatteryVoltage(); delay(2000); showBatteryVoltage(); delay(500);
     } else if (measurebattery && !isBatteryConnected) { 
       showNoBattery(); delay(500); 
-    }
+    } // конец ветвления индикации батареи
  
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
     workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
@@ -661,7 +684,7 @@
     if (state != RADIOLIB_ERR_NONE) {
       DEBUG(F("[RADIO] Init FAILED, code: ")); DEBUGln(state);
       while (true) { flashStatusLed(6); delay(4000); }
-    }
+    } // конец проверки инициализации радио
  
     setLoRaParams();
     radio.setDio1Action(setFlag);
@@ -685,5 +708,5 @@
  
     EVERY_MS(batteryPeriod) {
       if (measurebattery && isBatteryConnected) processBattery();
-    }
+    } // конец интервала проверки батареи
  } // конец функции loop
