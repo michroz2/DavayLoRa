@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.44 (TX: Фикс бага аппаратного ШИМ ESP32 при быстром loop)
+ * @version 1.45 (TX: Оптимизация таймера отправки в commSession)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -341,16 +341,19 @@
     } // конец проверки флага прерывания
  } // конец функции checkReceive
  
+ // ИСПРАВЛЕНИЕ 1.45: Отказ от EVERY_MS для немедленной отправки первого пакета
  bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes) {
     DEBUG(F("[RADIO] Starting CommSession for CMD: ")); DEBUGln(msgCmd);
     wasReceived = false;
     cmdExpected = expectedReply; 
     pingTimer = millis();
+    unsigned long lastSend = millis() - waitMilliseconds; 
     
     do {
       checkReceive();
-      EVERY_MS(waitMilliseconds) {
+      if (millis() - lastSend >= waitMilliseconds) {
         sendMessage(msgCmd, sndData);
+        lastSend = millis();
         doTimes--;
       } // конец интервальной отправки
     } while ((doTimes > 0) && (!wasReceived)); // конец цикла попыток
@@ -661,7 +664,6 @@
     } // конец условия изменения состояния
  } // конец функции processButton
  
- // ИСПРАВЛЕНИЕ: Кэширование состояния для защиты от аппаратного ШИМ-спама в быстром цикле ESP32
  void updateStatusLed(bool ledStatus) { 
     static int lastBrightness = -1;
     int newBrightness = ledStatus ? fbledBrightness : 0;
@@ -672,7 +674,6 @@
     } // конец защиты от спама analogWrite
  } // конец функции updateStatusLed
  
- // ИСПРАВЛЕНИЕ: Кэширование состояния для защиты от аппаратного ШИМ-спама
  void updateBIGLed(bool ledStatus) { 
     static int lastBigBrightness = -1;
     int newBrightness = ledStatus * pwmledBrightness;
@@ -879,7 +880,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.44 ==========="));
+    DEBUGln(F("=========== START TX v1.45 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);

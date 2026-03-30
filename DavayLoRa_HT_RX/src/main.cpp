@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.43 (RX: Полное логирование setup и перенос Serial.begin)
+ * @version 1.45 (RX: Оптимизация шины APB через кэширование состояния LED)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  */
 
@@ -541,8 +541,14 @@
     } else userButtonTimer = 0; 
  } // конец функции processUserButton
  
+ // ИСПРАВЛЕНИЕ 1.45: Защита шины APB через кэширование состояния digitalWrite
  void updateStatusLed(bool ledStatus) { 
-    digitalWrite(PIN_STATUS_LED, ledStatus); 
+    static int lastLedState = -1;
+    int newState = ledStatus ? HIGH : LOW;
+    if (lastLedState != newState) {
+      digitalWrite(PIN_STATUS_LED, newState);
+      lastLedState = newState;
+    } // конец защиты от аппаратного спама
  } // конец функции updateStatusLed
  
  void flashStatusLEDOnce() { 
@@ -623,7 +629,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.43 ==========="));
+    DEBUGln(F("=========== START RX v1.45 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
