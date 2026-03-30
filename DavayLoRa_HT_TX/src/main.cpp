@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.45 (TX: Оптимизация таймера отправки в commSession)
+ * @version 1.46 (TX: Оптимизация логов, устранение пустых строк и фиксация всех state)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -341,7 +341,6 @@
     } // конец проверки флага прерывания
  } // конец функции checkReceive
  
- // ИСПРАВЛЕНИЕ 1.45: Отказ от EVERY_MS для немедленной отправки первого пакета
  bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes) {
     DEBUG(F("[RADIO] Starting CommSession for CMD: ")); DEBUGln(msgCmd);
     wasReceived = false;
@@ -365,7 +364,7 @@
  } // конец функции commSession
  
  bool syncConfigToRX() {
-    DEBUGln(F("\n[RADIO] --- Syncing Config Struct to RX ---"));
+    DEBUGln(F("[RADIO] --- Syncing Config Struct to RX ---"));
     DEBUG(F("workAddress: ")); DEBUGln(rxSettings.workAddress);
     DEBUG(F("rxPwmledBrightness: ")); DEBUGln(rxSettings.rxPwmledBrightness);
     DEBUG(F("rxBuzzerVolume: ")); DEBUGln(rxSettings.rxBuzzerVolume);
@@ -477,7 +476,7 @@
  } // конец функции handleRoot
  
  void handleSave() {
-    DEBUGln(F("\n[WIFI] === Web UI: Save Requested ==="));
+    DEBUGln(F("[WIFI] === Web UI: Save Requested ==="));
     
     rxSettings.workAddress = server.arg("workAddress").toInt();
     rxSettings.measurebattery = server.hasArg("measurebattery");
@@ -642,7 +641,7 @@
       lastButtonTime = millis();
       
       if (currButtonState) { // Нажата
-        DEBUGln(F("\n[ACTION] Main Button PRESSED"));
+        DEBUGln(F("[ACTION] Main Button PRESSED"));
         if (currentState == STATE_NORMAL) {
           buttonPressStartTime = millis(); pingTimer = millis(); buttonPressedFirstTime = true;
           if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 300, WORK_COMM_ATTEMPTS)) {
@@ -656,7 +655,7 @@
           execClickCount++; lastExecClickTime = millis(); execModeTimer = millis(); 
         } // конец ветвления по состояниям
       } else { // Отпущена
-        DEBUGln(F("\n[ACTION] Main Button RELEASED"));
+        DEBUGln(F("[ACTION] Main Button RELEASED"));
         if (currentState == STATE_NORMAL) {
           sendMessage(CMD_SIGNAL, false); updateStatusLed(false); updateBIGLed(false);
         } // конец условия для нормального режима
@@ -722,13 +721,16 @@
         sleepSystem(); 
       } else if (prepClickCount == 3) {
         commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 500, WORK_COMM_ATTEMPTS);
+        DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
         currentState = STATE_EXEC_CONFIG; execModeTimer = millis(); 
         execBlinkActive = true; execBlinkStartTime = millis(); execClickCount = 0;
       } else if (prepClickCount == 4) {
         commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 500, WORK_COMM_ATTEMPTS);
+        DEBUGln(F("[STATE] ---> STATE_CONFIG_STANDBY"));
         currentState = STATE_CONFIG_STANDBY; pingTimer = millis();
         configBlinkActive = true; configBlinkStartTime = millis(); configClickCount = 0;
       } else {
+        DEBUGln(F("[STATE] ---> STATE_NORMAL (Invalid clicks)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
       } // конец разбора количества кликов
       prepClickCount = 0; 
@@ -747,6 +749,7 @@
       if (configClickCount == 2) {
         if (isWifiActive) stopWiFiPortal();
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
+        DEBUGln(F("[STATE] ---> STATE_NORMAL (Exited Config via button)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
       } else if (configClickCount == 1) { 
         if (!isWifiActive) startWiFiPortal(); 
@@ -778,6 +781,7 @@
     if (execClickCount > 0 && (millis() - lastExecClickTime > 600)) {
       if (execClickCount == 2) {
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
+        DEBUGln(F("[STATE] ---> STATE_NORMAL (Exited Exec Config via button)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
       } else if (execClickCount == 1) {
         if (commSession(CMD_CYCLE_EXEC, 1, CMD_CYCLE_EXEC_OK, 500, WORK_COMM_ATTEMPTS)) {
@@ -880,7 +884,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.45 ==========="));
+    DEBUGln(F("=========== START TX v1.46 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -963,6 +967,7 @@
     
     if (currentState == STATE_NORMAL && currButtonState) {
       if (millis() - buttonPressStartTime > 10000) {
+        DEBUGln(F("[STATE] ---> STATE_PREPARATION"));
         currentState = STATE_PREPARATION; prepModeTimer = millis(); prepClickCount = 0;
         updateBIGLed(false); buttonPressedFirstTime = false; 
       } // конец условия перехода в подготовку
@@ -979,6 +984,7 @@
       
       if (exitConfigRequested || (millis() - wifiStartTime > configTimeout)) {
         if (millis() - wifiStartTime > configTimeout) DEBUGln(F("[STATE] WiFi Portal Timeout -> Exit to STATE_NORMAL"));
+        else DEBUGln(F("[STATE] ---> STATE_NORMAL (Exited via Web UI)"));
         stopWiFiPortal();
         currentState = STATE_NORMAL; updateStatusLed(false);
       } // конец условия выхода из WiFi

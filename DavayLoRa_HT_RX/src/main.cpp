@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.45 (RX: Оптимизация шины APB через кэширование состояния LED)
+ * @version 1.46 (RX: Оптимизация логов, устранение пустых строк)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  */
 
@@ -305,13 +305,13 @@
       rcvData = payload[2];
       
       if (rcvCmd == CMD_REBOOT) {
-        DEBUGln(F("\n[ACTION] !!! CMD_REBOOT RECEIVED. Restarting in 500ms !!!"));
+        DEBUGln(F("[ACTION] !!! CMD_REBOOT RECEIVED. Restarting in 500ms !!!"));
         delay(500);
         ESP.restart();
       } // конец обработки команды перезагрузки
     } 
     else if (packetSize == (sizeof(ConfigPacket) + 2) && payload[1] == CMD_SYNC_CONFIG) {
-      DEBUGln(F("\n[RADIO] <<< Received Config Struct from TX!"));
+      DEBUGln(F("[RADIO] <<< Received Config Struct from TX!"));
       
       ConfigPacket newSettings;
       memcpy(&newSettings, &payload[2], sizeof(ConfigPacket));
@@ -629,7 +629,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.45 ==========="));
+    DEBUGln(F("=========== START RX v1.46 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
