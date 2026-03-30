@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.50 (TX: Выделение RadioComm)
+ * @version 1.51 (TX: Фикс утечек тока в Deep Sleep - перевод SPI пинов в INPUT)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -11,7 +11,7 @@
  #include "Battery.h" 
  #include "Config.h"  
  #include "WebPortal.h" 
- #include "RadioComm.h" // Подключаем модуль радиосвязи
+ #include "RadioComm.h" 
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
  #define PIN_BUTTON 7           
@@ -101,6 +101,11 @@
     
     radio.sleep();
     SPI.end();
+    
+    // ИСПРАВЛЕНИЕ: Симметричное отключение пинов SPI, как в RX, для устранения паразитных утечек тока
+    pinMode(csPin, INPUT); pinMode(mosiPin, INPUT); pinMode(misoPin, INPUT);
+    pinMode(sckPin, INPUT); pinMode(resetPin, INPUT); pinMode(busyPin, INPUT);
+    pinMode(irqPin, INPUT);
     
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH); 
     pinMode(PIN_ADC_CTRL, OUTPUT); digitalWrite(PIN_ADC_CTRL, HIGH);
@@ -364,7 +369,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.50 ==========="));
+    DEBUGln(F("=========== START TX v1.51 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
