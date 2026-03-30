@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.47 (RX: Выделение подсистемы Battery)
+ * @version 1.48 (RX: Выделение подсистемы Config)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  */
 
@@ -9,50 +9,9 @@
  #include <driver/rtc_io.h>
  #include <SPI.h>
  #include <RadioLib.h>
- #include <Preferences.h>
  
- #include "Battery.h" // Подключаем наш новый модуль батареи
- 
- Preferences preferences;
- 
- // ======================= ГЛОБАЛЬНЫЕ НАСТРОЙКИ (СИНХРОНИЗАЦИЯ) =======================
- #pragma pack(push, 1)
- struct ConfigPacket {
-    byte workAddress;
-    bool measurebattery;
-    unsigned long batteryPeriod;
-    unsigned long wakeUpHoldTime;
-    unsigned long wakeUpReleaseWindow;
-    unsigned long stuckSleepTime;
-    unsigned long configTimeout;
-    unsigned long sleepLedDuration;
-    
-    bool rxEnableBigLed;
-    int rxPwmledBrightness;
-    bool rxEnableBuzzer;
-    int rxBuzzerVolume;
-    unsigned long rxCutoffTime;
-    unsigned long pingTimeoutRX;
- };
- #pragma pack(pop)
- 
- // Локальные переменные RX
- byte workAddress = 4;                 
- int pwmledBrightness = 35;            
- int buzzerVolume = 255;               
- unsigned long cutoffTime = 2000;      
- unsigned long pingTimeout = 9000;     
- unsigned long stuckSleepTime = 10000; 
- bool measurebattery = true;           
- unsigned long batteryPeriod = 300000;    
- unsigned long sleepLedDuration = 2000;   
- unsigned long configTimeout = 600000;
- 
- unsigned long wakeUpHoldTime = 2000;     
- unsigned long wakeUpReleaseWindow = 2000; 
- 
- bool enableBigLed = true;             
- bool enableBuzzer = false;            
+ #include "Battery.h" 
+ #include "Config.h"  // Подключаем наш новый модуль конфигурации
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
  
@@ -142,8 +101,6 @@
  };
  
  // --- ПРОТОТИПЫ ---
- void loadConfig();
- void saveConfigFromPacket(ConfigPacket* p);
  void enterDeepSleep();
  void runWakeUpProtection(uint8_t wakeupPin);
  void processTimeOut();
@@ -162,59 +119,6 @@
  void setLoRaParams();
  void checkReceive();
  void onReceive(byte* payload, int packetSize);
- 
- // ======================= NVS (ПАМЯТЬ) =======================
- 
- void loadConfig() {
-    DEBUGln(F("--- Loading config from NVS ---"));
-    preferences.begin("davaylora", false);
-    
-    workAddress = preferences.getUChar("workAddress", 4);
-    measurebattery = preferences.getBool("measureBat", true);
-    pwmledBrightness = preferences.getInt("bigLedBright", 35);
-    buzzerVolume = preferences.getInt("buzzerVol", 255);
-    cutoffTime = preferences.getULong("cutoffTime", 2000);
-    pingTimeout = preferences.getULong("pingTimeout", 9000);
-    stuckSleepTime = preferences.getULong("stuckSleep", 10000);
-    configTimeout = preferences.getULong("confTo", 600000);
-    sleepLedDuration = preferences.getULong("sleepLedDuration", 2000);
-    
-    enableBigLed = preferences.getBool("enBigLed", true);
-    enableBuzzer = preferences.getBool("enBuzzer", false);
-    
-    batteryPeriod = preferences.getULong("batPeriod", 300000);
-    wakeUpHoldTime = preferences.getULong("wkUpHold", 2000);
-    wakeUpReleaseWindow = preferences.getULong("wkUpRel", 2000);
-    
-    preferences.end();
- } // конец функции loadConfig
- 
- void saveConfigFromPacket(ConfigPacket* p) {
-    DEBUGln(F("--- Saving received config struct to NVS ---"));
-    DEBUG(F("workAddress: ")); DEBUGln(p->workAddress);
-    DEBUG(F("rxPwmledBrightness: ")); DEBUGln(p->rxPwmledBrightness);
-    DEBUG(F("rxBuzzerVolume: ")); DEBUGln(p->rxBuzzerVolume);
-    
-    preferences.begin("davaylora", false);
-    
-    preferences.putUChar("workAddress", p->workAddress);
-    preferences.putBool("measureBat", p->measurebattery);
-    preferences.putULong("batPeriod", p->batteryPeriod);
-    preferences.putULong("wkUpHold", p->wakeUpHoldTime);
-    preferences.putULong("wkUpRel", p->wakeUpReleaseWindow);
-    preferences.putULong("stuckSleep", p->stuckSleepTime);
-    preferences.putULong("confTo", p->configTimeout);
-    preferences.putULong("sleepLedDuration", p->sleepLedDuration);
-    
-    preferences.putBool("enBigLed", p->rxEnableBigLed);
-    preferences.putInt("bigLedBright", p->rxPwmledBrightness);
-    preferences.putBool("enBuzzer", p->rxEnableBuzzer);
-    preferences.putInt("buzzerVol", p->rxBuzzerVolume);
-    preferences.putULong("cutoffTime", p->rxCutoffTime);
-    preferences.putULong("pingTimeout", p->pingTimeoutRX);
-    
-    preferences.end();
- } // конец функции saveConfigFromPacket
  
  // ======================= РАДИООБМЕН =======================
  
@@ -547,7 +451,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.47 ==========="));
+    DEBUGln(F("=========== START RX v1.48 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
