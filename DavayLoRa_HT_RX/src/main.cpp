@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.46 (RX: Оптимизация логов, устранение пустых строк)
+ * @version 1.47 (RX: Выделение подсистемы Battery)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  */
 
@@ -10,6 +10,8 @@
  #include <SPI.h>
  #include <RadioLib.h>
  #include <Preferences.h>
+ 
+ #include "Battery.h" // Подключаем наш новый модуль батареи
  
  Preferences preferences;
  
@@ -52,16 +54,6 @@
  bool enableBigLed = true;             
  bool enableBuzzer = false;            
  
- bool isBatteryConnected = false; 
- 
- // Пороги батареи
- #define BATTERY_MIN_VOLTAGE 3.5
- #define BATTERY_VOLTAGE_1 3.6
- #define BATTERY_VOLTAGE_2 3.7
- #define BATTERY_VOLTAGE_3 3.8
- #define BATTERY_VOLTAGE_4 3.9
- #define BATTERY_VOLTAGE_5 4.0
- 
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
  
  // Распиновка Heltec V3
@@ -70,11 +62,7 @@
  #define PIN_REED            7      // Магнитный переключатель (геркон)
  #define PIN_USER            0      
  #define PIN_STATUS_LED      35     
- #define PIN_BATTERY_LED     35     
- #define PIN_BATTERY_INTERNAL 1     
  #define PIN_VEXT 36                
- #define PIN_ADC_CTRL 37            
- #define HELTEC_BATTERY_MULTIPLIER 4.9 
  
  const int sckPin = 9;
  const int misoPin = 11;
@@ -174,15 +162,6 @@
  void setLoRaParams();
  void checkReceive();
  void onReceive(byte* payload, int packetSize);
- bool testBattery();
- bool batteryVoltageOK(byte tries);
- float batteryVoltage();
- void processBattery();
- void showBatteryVoltage();
- void showNoBattery();
- void flashBatteryLEDOnce();
- void flashLedBattery(byte times);
- void stopWorking();
  
  // ======================= NVS (ПАМЯТЬ) =======================
  
@@ -541,7 +520,6 @@
     } else userButtonTimer = 0; 
  } // конец функции processUserButton
  
- // ИСПРАВЛЕНИЕ 1.45: Защита шины APB через кэширование состояния digitalWrite
  void updateStatusLed(bool ledStatus) { 
     static int lastLedState = -1;
     int newState = ledStatus ? HIGH : LOW;
@@ -560,66 +538,6 @@
     delay(200); 
  } // конец функции flashStatusLed
  
- // ======================= БАТАРЕЯ =======================
- 
- bool testBattery() { 
-    if (batteryVoltageOK(5)) return true;
-    return false;
- } // конец функции testBattery
- 
- bool batteryVoltageOK(byte tries) {
-    float minV = 5.0, maxV = 0.0;
-    for (byte i = 0; i < tries; i++) {
-      float currentVBat = batteryVoltage();
-      if (currentVBat < minV) minV = currentVBat; 
-      if (currentVBat > maxV) maxV = currentVBat; 
-      if ((currentVBat > 4.5) || (currentVBat < 2.5)) return false;
-      delay(150);
-    } // конец цикла замеров
-    if ((maxV - minV) > 0.05) return false;
-    return true;
- } // конец функции batteryVoltageOK
- 
- float batteryVoltage() {
-    digitalWrite(PIN_ADC_CTRL, LOW); delay(10);                       
-    float measuredvbat = analogRead(PIN_BATTERY_INTERNAL);
-    digitalWrite(PIN_ADC_CTRL, HIGH); 
-    measuredvbat *= 3.3; measuredvbat /= 4095.0; measuredvbat *= HELTEC_BATTERY_MULTIPLIER; 
-    return measuredvbat;
- } // конец функции batteryVoltage
- 
- void processBattery() { 
-    if (batteryVoltage() < BATTERY_MIN_VOLTAGE) stopWorking(); 
- } // конец функции processBattery
- 
- void showBatteryVoltage() {
-    float voltage = batteryVoltage();
-    if (voltage > BATTERY_VOLTAGE_1) flashBatteryLEDOnce(); 
-    if (voltage > BATTERY_VOLTAGE_2) flashBatteryLEDOnce(); 
-    if (voltage > BATTERY_VOLTAGE_3) flashBatteryLEDOnce(); 
-    if (voltage > BATTERY_VOLTAGE_4) flashBatteryLEDOnce(); 
-    if (voltage > BATTERY_VOLTAGE_5) flashBatteryLEDOnce(); 
- } // конец функции showBatteryVoltage
- 
- void showNoBattery() { 
-    digitalWrite(PIN_BATTERY_LED, 1); delay(2000); digitalWrite(PIN_BATTERY_LED, 0); delay(250); 
- } // конец функции showNoBattery
- 
- void flashBatteryLEDOnce() { 
-    digitalWrite(PIN_BATTERY_LED, 1); delay(250); digitalWrite(PIN_BATTERY_LED, 0); delay(250); 
- } // конец функции flashBatteryLEDOnce
- 
- void flashLedBattery(byte times) { 
-    for (int i = 0; i < times; i++) flashBatteryLEDOnce(); 
-    delay(200); 
- } // конец функции flashLedBattery
- 
- void stopWorking() { 
-    DEBUGln(F("[STATE] BATTERY DEAD! Stopping..."));
-    flashLedBattery(7); digitalWrite(PIN_BATTERY_LED, 0); delay(3000); 
-    flashLedBattery(7); digitalWrite(PIN_BATTERY_LED, 0); enterDeepSleep(); 
- } // конец функции stopWorking
- 
  // ======================= СТАРТ И ЦИКЛ =======================
  
  void setup() {
@@ -629,7 +547,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.46 ==========="));
+    DEBUGln(F("=========== START RX v1.47 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
