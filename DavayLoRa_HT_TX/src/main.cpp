@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.51 (TX: Фикс утечек тока в Deep Sleep - перевод SPI пинов в INPUT)
+ * @version 1.52 (TX: Перегруппировка функций для удобочитаемости)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  */
 
@@ -78,22 +78,70 @@
  unsigned long execModeTimer = 0; 
  
  // --- ПРОТОТИПЫ ---
- void enterDeepSleep();
- void runWakeUpProtection(uint8_t wakeupPin);
- void processButton();
- void processPreparationMode();
- void processConfigStandby();
- void processConfigLed();
- void processExecConfigStandby();
- void processExecConfigLed();
- void processPing();
- void processUserButton();
- void sleepSystem();
  void updateStatusLed(bool ledStatus);
  void updateBIGLed(bool ledStatus);
  void flashStatusLed(byte times);
+ void processConfigLed();
+ void processExecConfigLed();
+ void enterDeepSleep();
+ void runWakeUpProtection(uint8_t wakeupPin);
+ void sleepSystem();
+ void processButton();
+ void processUserButton();
+ void processPreparationMode();
+ void processConfigStandby();
+ void processExecConfigStandby();
+ void processPing();
  
- // ======================= БИЗНЕС-ЛОГИКА (СОН, КНОПКА И ПИНГ) =======================
+ // ======================= ИНДИКАЦИЯ (LED) =======================
+ 
+ void updateStatusLed(bool ledStatus) { 
+    static int lastBrightness = -1;
+    int newBrightness = ledStatus ? fbledBrightness : 0;
+    
+    if (lastBrightness != newBrightness) {
+      analogWrite(PIN_FB_LED, newBrightness);
+      lastBrightness = newBrightness;
+    } // конец защиты от спама analogWrite
+ } // конец функции updateStatusLed
+ 
+ void updateBIGLed(bool ledStatus) { 
+    static int lastBigBrightness = -1;
+    int newBrightness = ledStatus * pwmledBrightness;
+    
+    if (lastBigBrightness != newBrightness) {
+      analogWrite(PIN_BIG_LED, newBrightness); 
+      lastBigBrightness = newBrightness;
+    } // конец защиты от спама analogWrite
+ } // конец функции updateBIGLed
+ 
+ void flashStatusLed(byte times) {
+    for (int i = 0; i < times; i++) {
+      updateStatusLed(true); delay(100); updateStatusLed(false); delay(200);
+    } // конец цикла вспышек
+ } // конец функции flashStatusLed
+ 
+ void processConfigLed() {
+    if (!configBlinkActive) return;
+    unsigned long elapsed = millis() - configBlinkStartTime;
+    if (elapsed < 100) updateStatusLed(true); 
+    else if (elapsed < 200) updateStatusLed(false); 
+    else if (elapsed < 300) updateStatusLed(true); 
+    else if (elapsed < 400) updateStatusLed(false); 
+    else if (elapsed < 500) updateStatusLed(true); 
+    else { updateStatusLed(false); configBlinkActive = false; }
+ } // конец функции processConfigLed
+ 
+ void processExecConfigLed() {
+    if (!execBlinkActive) return;
+    unsigned long elapsed = millis() - execBlinkStartTime;
+    if (elapsed < 100) updateStatusLed(true); 
+    else if (elapsed < 200) updateStatusLed(false); 
+    else if (elapsed < 300) updateStatusLed(true); 
+    else { updateStatusLed(false); execBlinkActive = false; }
+ } // конец функции processExecConfigLed
+ 
+ // ======================= УПРАВЛЕНИЕ ПИТАНИЕМ И СНОМ =======================
  
  void enterDeepSleep() {
     DEBUGln(F("[STATE] ---> ENTERING DEEP SLEEP"));
@@ -102,7 +150,6 @@
     radio.sleep();
     SPI.end();
     
-    // ИСПРАВЛЕНИЕ: Симметричное отключение пинов SPI, как в RX, для устранения паразитных утечек тока
     pinMode(csPin, INPUT); pinMode(mosiPin, INPUT); pinMode(misoPin, INPUT);
     pinMode(sckPin, INPUT); pinMode(resetPin, INPUT); pinMode(busyPin, INPUT);
     pinMode(irqPin, INPUT);
@@ -160,6 +207,8 @@
     enterDeepSleep();
  } // конец функции sleepSystem
  
+ // ======================= ОБРАБОТКА ВВОДА (КНОПКИ) =======================
+ 
  void processButton() {
     prevButtonState = currButtonState;
     currButtonState = !digitalRead(PIN_BUTTON); 
@@ -190,51 +239,17 @@
     } // конец условия изменения состояния
  } // конец функции processButton
  
- void updateStatusLed(bool ledStatus) { 
-    static int lastBrightness = -1;
-    int newBrightness = ledStatus ? fbledBrightness : 0;
-    
-    if (lastBrightness != newBrightness) {
-      analogWrite(PIN_FB_LED, newBrightness);
-      lastBrightness = newBrightness;
-    } // конец защиты от спама analogWrite
- } // конец функции updateStatusLed
+ void processUserButton() {
+    static unsigned long userButtonTimer = 0;
+    if (digitalRead(PIN_USER) == LOW) { 
+      if (userButtonTimer == 0) userButtonTimer = millis();
+      else if (millis() - userButtonTimer > 5000) { 
+        sleepSystem(); userButtonTimer = 0; 
+      } // конец условия зажатия 5 сек
+    } else { userButtonTimer = 0; } // конец условия отпускания кнопки
+ } // конец функции processUserButton
  
- void updateBIGLed(bool ledStatus) { 
-    static int lastBigBrightness = -1;
-    int newBrightness = ledStatus * pwmledBrightness;
-    
-    if (lastBigBrightness != newBrightness) {
-      analogWrite(PIN_BIG_LED, newBrightness); 
-      lastBigBrightness = newBrightness;
-    } // конец защиты от спама analogWrite
- } // конец функции updateBIGLed
- 
- void flashStatusLed(byte times) {
-    for (int i = 0; i < times; i++) {
-      updateStatusLed(true); delay(100); updateStatusLed(false); delay(200);
-    } // конец цикла вспышек
- } // конец функции flashStatusLed
- 
- void processConfigLed() {
-    if (!configBlinkActive) return;
-    unsigned long elapsed = millis() - configBlinkStartTime;
-    if (elapsed < 100) updateStatusLed(true); 
-    else if (elapsed < 200) updateStatusLed(false); 
-    else if (elapsed < 300) updateStatusLed(true); 
-    else if (elapsed < 400) updateStatusLed(false); 
-    else if (elapsed < 500) updateStatusLed(true); 
-    else { updateStatusLed(false); configBlinkActive = false; }
- } // конец функции processConfigLed
- 
- void processExecConfigLed() {
-    if (!execBlinkActive) return;
-    unsigned long elapsed = millis() - execBlinkStartTime;
-    if (elapsed < 100) updateStatusLed(true); 
-    else if (elapsed < 200) updateStatusLed(false); 
-    else if (elapsed < 300) updateStatusLed(true); 
-    else { updateStatusLed(false); execBlinkActive = false; }
- } // конец функции processExecConfigLed
+ // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
  
  void processPreparationMode() {
     EVERY_MS(166) {
@@ -350,16 +365,6 @@
     } // конец условия таймаута неактивности
  } // конец функции processPing
  
- void processUserButton() {
-    static unsigned long userButtonTimer = 0;
-    if (digitalRead(PIN_USER) == LOW) { 
-      if (userButtonTimer == 0) userButtonTimer = millis();
-      else if (millis() - userButtonTimer > 5000) { 
-        sleepSystem(); userButtonTimer = 0; 
-      } // конец условия зажатия 5 сек
-    } else { userButtonTimer = 0; } // конец условия отпускания кнопки
- } // конец функции processUserButton
- 
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
@@ -369,7 +374,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.51 ==========="));
+    DEBUGln(F("=========== START TX v1.52 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);

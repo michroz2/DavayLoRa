@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.50 (RX: Выделение RadioComm)
+ * @version 1.52 (RX: Перегруппировка функций для удобочитаемости)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  */
 
@@ -10,7 +10,7 @@
  
  #include "Battery.h" 
  #include "Config.h"  
- #include "RadioComm.h" // Подключаем модуль радиосвязи
+ #include "RadioComm.h" 
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
  
@@ -55,28 +55,67 @@
  unsigned long execBlinkStartTime = 0;
  
  // --- ПРОТОТИПЫ ---
- void enterDeepSleep();
- void runWakeUpProtection(uint8_t wakeupPin);
- void processTimeOut();
- void processCommand();
- void processSignal();
- void processConfigLed();
- void processExecConfigLed();
- void processCutoff();
- void processUserButton();
- void goToSleep();
  void updateStatusLed(bool ledStatus);
  void flashStatusLEDOnce();
  void flashStatusLed(byte times);
+ void processConfigLed();
+ void processExecConfigLed();
+ void enterDeepSleep();
+ void runWakeUpProtection(uint8_t wakeupPin);
+ void goToSleep();
+ void processUserButton();
+ void processCommand();
+ void processSignal();
+ void processCutoff();
+ void processTimeOut();
  
- // ======================= БИЗНЕС-ЛОГИКА =======================
+ // ======================= ИНДИКАЦИЯ (LED & BUZZER) =======================
+ 
+ void updateStatusLed(bool ledStatus) { 
+    static int lastLedState = -1;
+    int newState = ledStatus ? HIGH : LOW;
+    if (lastLedState != newState) {
+      digitalWrite(PIN_STATUS_LED, newState);
+      lastLedState = newState;
+    } // конец защиты от аппаратного спама
+ } // конец функции updateStatusLed
+ 
+ void flashStatusLEDOnce() { 
+    digitalWrite(PIN_STATUS_LED, 1); delay(250); digitalWrite(PIN_STATUS_LED, 0); delay(250); 
+ } // конец функции flashStatusLEDOnce
+ 
+ void flashStatusLed(byte times) { 
+    for (int i = 0; i < times; i++) flashStatusLEDOnce(); 
+    delay(200); 
+ } // конец функции flashStatusLed
+ 
+ void processConfigLed() {
+    if (!configBlinkActive) return;
+    unsigned long elapsed = millis() - configBlinkStartTime;
+    if (elapsed < 100) updateStatusLed(true); 
+    else if (elapsed < 200) updateStatusLed(false); 
+    else if (elapsed < 300) updateStatusLed(true); 
+    else if (elapsed < 400) updateStatusLed(false); 
+    else if (elapsed < 500) updateStatusLed(true); 
+    else { updateStatusLed(false); configBlinkActive = false; }
+ } // конец функции processConfigLed
+ 
+ void processExecConfigLed() {
+    if (!execBlinkActive) return;
+    unsigned long elapsed = millis() - execBlinkStartTime;
+    if (elapsed < 100) updateStatusLed(true); 
+    else if (elapsed < 200) updateStatusLed(false); 
+    else if (elapsed < 300) updateStatusLed(true); 
+    else { updateStatusLed(false); execBlinkActive = false; }
+ } // конец функции processExecConfigLed
+ 
+ // ======================= УПРАВЛЕНИЕ ПИТАНИЕМ И СНОМ =======================
  
  void enterDeepSleep() {
     DEBUGln(F("[STATE] ---> ENTERING DEEP SLEEP"));
     radio.sleep();
     SPI.end();
     
-    // Обращение к пинам SPI работает благодаря extern const int в RadioComm.h
     pinMode(csPin, INPUT); pinMode(mosiPin, INPUT); pinMode(misoPin, INPUT);
     pinMode(sckPin, INPUT); pinMode(resetPin, INPUT); pinMode(busyPin, INPUT);
     pinMode(irqPin, INPUT);
@@ -142,25 +181,20 @@
     enterDeepSleep();
  } // конец функции goToSleep
  
- void processTimeOut() {
-    if ((millis() - pingTimeOutLastTime) > pingTimeout) {
-      signalStatus = false;
-      pingTimeOutLastTime = millis();
-      
-      if (currentState == STATE_NORMAL) {
-        DEBUGln(F("[RADIO] Ping Timeout! No connection."));
-        flashStatusLed(2); 
-      }
-      else if (currentState == STATE_CONFIG) { 
-        DEBUGln(F("[STATE] Config Timeout (No Heartbeat) -> STATE_NORMAL"));
-        currentState = STATE_NORMAL; updateStatusLed(false); 
-      }
-      else if (currentState == STATE_EXEC_CONFIG) { 
-        DEBUGln(F("[STATE] Exec Config Timeout (No Heartbeat) -> STATE_NORMAL"));
-        currentState = STATE_NORMAL; updateStatusLed(false); 
-      } // конец ветвления состояний при таймауте
-    } // конец проверки интервала таймаута
- } // конец функции processTimeOut
+ // ======================= ОБРАБОТКА ВВОДА (КНОПКИ) =======================
+ 
+ void processUserButton() {
+    static unsigned long userButtonTimer = 0;
+    if (digitalRead(PIN_USER) == LOW) { 
+      if (userButtonTimer == 0) userButtonTimer = millis();
+      else if (millis() - userButtonTimer > 5000) {
+        DEBUGln(F("[ACTION] USER button held 5s -> Local Sleep"));
+        goToSleep(); 
+      } // конец проверки удержания USER
+    } else userButtonTimer = 0; 
+ } // конец функции processUserButton
+ 
+ // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
  
  void processCommand() {
     DEBUG(F("[ACTION] Processing Command: ")); DEBUGln(rcvCmd);
@@ -244,26 +278,6 @@
     digitalWrite(PIN_STATUS_LED, signalStatus);
  } // конец функции processSignal
  
- void processConfigLed() {
-    if (!configBlinkActive) return;
-    unsigned long elapsed = millis() - configBlinkStartTime;
-    if (elapsed < 100) updateStatusLed(true); 
-    else if (elapsed < 200) updateStatusLed(false); 
-    else if (elapsed < 300) updateStatusLed(true); 
-    else if (elapsed < 400) updateStatusLed(false); 
-    else if (elapsed < 500) updateStatusLed(true); 
-    else { updateStatusLed(false); configBlinkActive = false; }
- } // конец функции processConfigLed
- 
- void processExecConfigLed() {
-    if (!execBlinkActive) return;
-    unsigned long elapsed = millis() - execBlinkStartTime;
-    if (elapsed < 100) updateStatusLed(true); 
-    else if (elapsed < 200) updateStatusLed(false); 
-    else if (elapsed < 300) updateStatusLed(true); 
-    else { updateStatusLed(false); execBlinkActive = false; }
- } // конец функции processExecConfigLed
- 
  void processCutoff() {
     if (signalStatus && (millis() - cutoffTimer > cutoffTime)) {
       DEBUGln(F("[ACTION] Signal Cutoff Triggered!"));
@@ -273,36 +287,27 @@
     } // конец проверки таймаута отсечки
  } // конец функции processCutoff
  
- void processUserButton() {
-    static unsigned long userButtonTimer = 0;
-    if (digitalRead(PIN_USER) == LOW) { 
-      if (userButtonTimer == 0) userButtonTimer = millis();
-      else if (millis() - userButtonTimer > 5000) {
-        DEBUGln(F("[ACTION] USER button held 5s -> Local Sleep"));
-        goToSleep(); 
-      } // конец проверки удержания USER
-    } else userButtonTimer = 0; 
- } // конец функции processUserButton
+ void processTimeOut() {
+    if ((millis() - pingTimeOutLastTime) > pingTimeout) {
+      signalStatus = false;
+      pingTimeOutLastTime = millis();
+      
+      if (currentState == STATE_NORMAL) {
+        DEBUGln(F("[RADIO] Ping Timeout! No connection."));
+        flashStatusLed(2); 
+      }
+      else if (currentState == STATE_CONFIG) { 
+        DEBUGln(F("[STATE] Config Timeout (No Heartbeat) -> STATE_NORMAL"));
+        currentState = STATE_NORMAL; updateStatusLed(false); 
+      }
+      else if (currentState == STATE_EXEC_CONFIG) { 
+        DEBUGln(F("[STATE] Exec Config Timeout (No Heartbeat) -> STATE_NORMAL"));
+        currentState = STATE_NORMAL; updateStatusLed(false); 
+      } // конец ветвления состояний при таймауте
+    } // конец проверки интервала таймаута
+ } // конец функции processTimeOut
  
- void updateStatusLed(bool ledStatus) { 
-    static int lastLedState = -1;
-    int newState = ledStatus ? HIGH : LOW;
-    if (lastLedState != newState) {
-      digitalWrite(PIN_STATUS_LED, newState);
-      lastLedState = newState;
-    } // конец защиты от аппаратного спама
- } // конец функции updateStatusLed
- 
- void flashStatusLEDOnce() { 
-    digitalWrite(PIN_STATUS_LED, 1); delay(250); digitalWrite(PIN_STATUS_LED, 0); delay(250); 
- } // конец функции flashStatusLEDOnce
- 
- void flashStatusLed(byte times) { 
-    for (int i = 0; i < times; i++) flashStatusLEDOnce(); 
-    delay(200); 
- } // конец функции flashStatusLed
- 
- // ======================= СТАРТ И ЦИКЛ =======================
+ // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
  #ifdef DEBUG_ENABLE
@@ -311,7 +316,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.50 ==========="));
+    DEBUGln(F("=========== START RX v1.52 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
