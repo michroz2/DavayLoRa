@@ -7,7 +7,7 @@
  #include "Config.h"
  
  // Локальные макросы отладки
- // #define DEBUG_ENABLE // Логирование выключено
+ #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
