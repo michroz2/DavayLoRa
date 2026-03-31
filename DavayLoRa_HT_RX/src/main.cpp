@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.53
+ * @version 1.54 (RX: Идеальный сон - аппаратное удержание состояний пинов VEXT и ADC)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Описание: Ядро стейт-машины, логика переключения режимов и обработка геркона/кнопки.
  */
@@ -8,6 +8,7 @@
  #include <Arduino.h>
  #include <esp_sleep.h>
  #include <driver/rtc_io.h>
+ #include <driver/gpio.h> // Добавлено для функций заморозки пинов (gpio_hold)
  
  #include "Battery.h" 
  #include "Config.h"  
@@ -128,6 +129,12 @@
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH);
     pinMode(PIN_ADC_CTRL, OUTPUT); digitalWrite(PIN_ADC_CTRL, HIGH);
     
+    // --- ИДЕАЛЬНЫЙ СОН: Заморозка пинов для исключения плавающих уровней ---
+    gpio_hold_en((gpio_num_t)PIN_VEXT);
+    gpio_hold_en((gpio_num_t)PIN_ADC_CTRL);
+    gpio_deep_sleep_hold_en();
+    // -----------------------------------------------------------------------
+ 
     pinMode(PIN_STATUS_LED, OUTPUT); digitalWrite(PIN_STATUS_LED, LOW);
     pinMode(PIN_SIGNAL_LED, OUTPUT); digitalWrite(PIN_SIGNAL_LED, LOW);
     pinMode(PIN_SIGNAL_BUZZERS, OUTPUT); digitalWrite(PIN_SIGNAL_BUZZERS, LOW);
@@ -327,13 +334,19 @@
  // ======================= ОСНОВНЫЕ ФУНКЦИИ (SETUP & LOOP) =======================
  
  void setup() {
+    // --- СНЯТИЕ ЗАМОРОЗКИ ПИНОВ ПОСЛЕ СНА ---
+    gpio_hold_dis((gpio_num_t)PIN_VEXT);
+    gpio_hold_dis((gpio_num_t)PIN_ADC_CTRL);
+    gpio_deep_sleep_hold_dis();
+    // ----------------------------------------
+ 
  #ifdef DEBUG_ENABLE
     Serial.begin(115200); 
     while (!Serial); 
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.53 ==========="));
+    DEBUGln(F("=========== START RX v1.54 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
