@@ -1,7 +1,8 @@
 /**
  * @file main.cpp (RX)
- * @version 1.52 (RX: Перегруппировка функций для удобочитаемости)
+ * @version 1.53
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
+ * Описание: Ядро стейт-машины, логика переключения режимов и обработка геркона/кнопки.
  */
 
  #include <Arduino.h>
@@ -15,16 +16,17 @@
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================
  
  // Распиновка Heltec V3
- #define PIN_SIGNAL_LED      41     
- #define PIN_SIGNAL_BUZZERS  42     
- #define PIN_REED            7      // Магнитный переключатель (геркон)
- #define PIN_USER            0      
- #define PIN_STATUS_LED      35     
+ #define PIN_SIGNAL_LED      41     // Сигнальный свет для актера
+ #define PIN_SIGNAL_BUZZERS  42     // Вибрация / Зуммер
+ #define PIN_REED            7      // Магнитный переключатель (геркон) для включения
+ #define PIN_USER            0      // Кнопка PRG на плате
+ #define PIN_STATUS_LED      35     // Мелкий светодиод обратной связи
  #define PIN_VEXT 36                
  
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И МАКРОСЫ =======================
  
- #define DEBUG_ENABLE
+ // Локальные макросы отладки
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -39,12 +41,12 @@
     if (flg) { tmr = millis(); }\
     if (flg)
  
- bool signalStatus;
+ bool signalStatus; // Активно ли удержание кнопки на пульте в данный момент
  
- unsigned long pingTimeOutLastTime; // Таймер Failsafe
- unsigned long cutoffTimer = 0;
+ unsigned long pingTimeOutLastTime; // Таймер Failsafe для отключения при обрыве связи
+ unsigned long cutoffTimer = 0;     // Таймер защиты от слишком долгого удержания сигнала
  
- // Состояния RX
+ // Состояния RX: Рабочий режим, Настройка (ожидание Wi-Fi), Настройка сигнала (Свет/Вибро)
  enum SystemState { STATE_NORMAL, STATE_CONFIG, STATE_EXEC_CONFIG };
  SystemState currentState = STATE_NORMAL;
  
@@ -111,15 +113,18 @@
  
  // ======================= УПРАВЛЕНИЕ ПИТАНИЕМ И СНОМ =======================
  
+ // Оптимизация Deep Sleep: Перевод всей периферии в режим минимального энергопотребления
  void enterDeepSleep() {
     DEBUGln(F("[STATE] ---> ENTERING DEEP SLEEP"));
     radio.sleep();
-    SPI.end();
+    SPI.end(); // Выключение аппаратной шины SPI
     
+    // Блокировка паразитных токов на пинах LoRa путем перевода их в режим высокого сопротивления (INPUT)
     pinMode(csPin, INPUT); pinMode(mosiPin, INPUT); pinMode(misoPin, INPUT);
     pinMode(sckPin, INPUT); pinMode(resetPin, INPUT); pinMode(busyPin, INPUT);
     pinMode(irqPin, INPUT);
     
+    // Обесточивание периферии и делителя батареи
     pinMode(PIN_VEXT, OUTPUT); digitalWrite(PIN_VEXT, HIGH);
     pinMode(PIN_ADC_CTRL, OUTPUT); digitalWrite(PIN_ADC_CTRL, HIGH);
     
@@ -130,6 +135,7 @@
     rtc_gpio_pullup_en((gpio_num_t)PIN_REED);
     rtc_gpio_pulldown_dis((gpio_num_t)PIN_REED);
     
+    // Защита от "залипания" магнита: если он не был убран, уходим в сон по таймеру, а не по прерыванию
     if (digitalRead(PIN_REED) == LOW) {
       DEBUGln(F("[STATE] Reed is STUCK. Sleeping with timer..."));
       esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
@@ -140,6 +146,7 @@
     esp_deep_sleep_start();
  } // конец функции enterDeepSleep
  
+ // Защита от дребезга и случайного касания магнита при пробуждении
  void runWakeUpProtection(uint8_t wakeupPin) {
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
     if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) enterDeepSleep(); 
@@ -148,6 +155,7 @@
       DEBUGln(F("[STATE] Woke up from Deep Sleep. Checking protection..."));
       updateStatusLed(true);
       unsigned long startHold = millis();
+      // Требование удержания магнита не менее wakeUpHoldTime (2 сек)
       while (millis() - startHold < wakeUpHoldTime) {
         if (digitalRead(wakeupPin) == HIGH) { 
           DEBUGln(F("[ACTION] Magnet released too early. Going back to sleep."));
@@ -159,6 +167,7 @@
       DEBUGln(F("[STATE] Waiting for magnet release in window..."));
       unsigned long startReleaseWindow = millis();
       bool releasedInWindow = false;
+      // Требование убрать магнит в течение окна wakeUpReleaseWindow
       while (millis() - startReleaseWindow < wakeUpReleaseWindow) {
         updateStatusLed((millis() % 200) < 100); 
         if (digitalRead(wakeupPin) == HIGH) { 
@@ -196,14 +205,17 @@
  
  // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
  
+ // Исполнение команд, принятых из эфира
  void processCommand() {
     DEBUG(F("[ACTION] Processing Command: ")); DEBUGln(rcvCmd);
     switch (rcvCmd) {
       case CMD_SIGNAL:
+        // Главный рабочий сигнал (Вкл/Выкл свет или вибро у актера)
         signalStatus = rcvData; processSignal();
         if (signalStatus) sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus); 
         break;
       case CMD_PING: {
+        // Синхронное моргание для подтверждения качества связи
         unsigned long flashStatus = millis();
         signalStatus = rcvData; processSignal();
         updateStatusLed(true);
@@ -234,6 +246,7 @@
         analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
         break;
       case CMD_CYCLE_EXEC: {
+        // Смена исполнительных устройств (свет -> вибро -> свет+вибро -> ничего) на лету
         DEBUGln(F("[ACTION] CMD_CYCLE_EXEC received. Cycling actuators."));
         byte state = (enableBuzzer ? 2 : 0) | (enableBigLed ? 1 : 0);
         state = (state + 1) % 4;
@@ -251,6 +264,7 @@
         
         sendMessage(rcvAddress, CMD_CYCLE_EXEC_OK, state);
         
+        // Демонстрация актеру выбранного режима (длится 1 сек)
         signalStatus = true; processSignal(); 
         delay(1000); 
         signalStatus = false; processSignal();
@@ -267,6 +281,7 @@
     rcvCmd = 0; 
  } // конец функции processCommand
  
+ // Физическое включение света и вибрации (с учетом настроек яркости и громкости)
  void processSignal() {
     cutoffTimer = millis(); 
     if (signalStatus && enableBigLed) analogWrite(PIN_SIGNAL_LED, pwmledBrightness);
@@ -278,6 +293,7 @@
     digitalWrite(PIN_STATUS_LED, signalStatus);
  } // конец функции processSignal
  
+ // Защитная отсечка: если сигнал подается слишком долго, он отключается для экономии батареи
  void processCutoff() {
     if (signalStatus && (millis() - cutoffTimer > cutoffTime)) {
       DEBUGln(F("[ACTION] Signal Cutoff Triggered!"));
@@ -287,6 +303,7 @@
     } // конец проверки таймаута отсечки
  } // конец функции processCutoff
  
+ // Проверка потери связи (если пинги от пульта перестали приходить)
  void processTimeOut() {
     if ((millis() - pingTimeOutLastTime) > pingTimeout) {
       signalStatus = false;
@@ -294,7 +311,7 @@
       
       if (currentState == STATE_NORMAL) {
         DEBUGln(F("[RADIO] Ping Timeout! No connection."));
-        flashStatusLed(2); 
+        flashStatusLed(2); // Двойная вспышка - индикация потери связи
       }
       else if (currentState == STATE_CONFIG) { 
         DEBUGln(F("[STATE] Config Timeout (No Heartbeat) -> STATE_NORMAL"));
@@ -316,7 +333,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.52 ==========="));
+    DEBUGln(F("=========== START RX v1.53 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
@@ -407,17 +424,21 @@
  } // конец функции setup
  
  void loop() {
+    // Проверка, пришел ли пакет по воздуху
     checkReceive(); 
  
+    // Исполнение пришедшей команды либо проверка таймаута соединения
     if (rcvCmd) processCommand(); 
     else processTimeOut(); 
  
+    // Маршрутизация логики в зависимости от режима
     if (currentState == STATE_NORMAL) processCutoff();
     else if (currentState == STATE_CONFIG) processConfigLed();
     else if (currentState == STATE_EXEC_CONFIG) processExecConfigLed();
     
     processUserButton(); 
  
+    // Периодический мониторинг заряда батареи
     EVERY_MS(batteryPeriod) {
       if (measurebattery && isBatteryConnected) processBattery();
     } // конец интервала проверки батареи

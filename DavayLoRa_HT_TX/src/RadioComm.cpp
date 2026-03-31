@@ -7,7 +7,7 @@
  #include "Config.h"
  
  // Локальные макросы отладки
- #define DEBUG_ENABLE
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -43,6 +43,7 @@
  
  volatile bool receivedFlag = false; 
  
+ // Список рабочих частот. Выбор частоты зависит от адреса устройства.
  unsigned long workingFrequency[MAX_ADDRESS] = {
     434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
     434150000, 434270000, 433850000, 433730000, 433970000, 434060000, 434180000,
@@ -68,9 +69,10 @@
     
     lastSendTime = millis();
     receivedFlag = false; 
-    radio.startReceive(); 
+    radio.startReceive(); // Сразу переходим обратно в режим приема
  } // конец функции transmitPacket
  
+ // Стандартная отправка 3-байтового пакета (Адрес, Команда, Данные)
  void sendMessage(byte msgCmd, byte sndData) {
     byte payload[3] = {workAddress, msgCmd, sndData};
     transmitPacket(payload, 3);
@@ -90,6 +92,7 @@
     } // конец проверки флага прерывания
  } // конец функции checkReceive
  
+ // Сессия связи: отправка команды и ожидание подтверждения (с повторными попытками)
  bool commSession(byte msgCmd, byte sndData, byte expectedReply, unsigned long waitMilliseconds, int doTimes) {
     DEBUG(F("[RADIO] Starting CommSession for CMD: ")); DEBUGln(msgCmd);
     wasReceived = false;
@@ -112,6 +115,7 @@
     return wasReceived; 
  } // конец функции commSession
  
+ // Передача структуры настроек на приемник
  bool syncConfigToRX() {
     DEBUGln(F("[RADIO] --- Syncing Config Struct to RX ---"));
     DEBUG(F("workAddress: ")); DEBUGln(rxSettings.workAddress);
@@ -142,6 +146,7 @@
     return false;
  } // конец функции syncConfigToRX
  
+ // Базовые параметры LoRa: Максимальная мощность и дальнобойные настройки
  void setLoRaParams() {
     DEBUGln("[RADIO] setLoRaParams()");
     radio.setOutputPower(20);

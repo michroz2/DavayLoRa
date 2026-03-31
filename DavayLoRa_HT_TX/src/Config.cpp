@@ -6,7 +6,7 @@
  #include "Config.h"
 
  // Локальные макросы отладки
- #define DEBUG_ENABLE
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -16,7 +16,7 @@
  #endif
  
  ConfigPacket rxSettings;
- Preferences preferences;
+ Preferences preferences; // Объект для работы с NVS (сохранение настроек)
  
  byte workAddress = 4;                 
  bool measurebattery = true;           
@@ -35,6 +35,7 @@
  
  unsigned long pingTimeoutRX = 9000;   
  
+ // Чтение настроек из памяти при загрузке системы
  void loadConfig() {
     DEBUGln(F("--- Loading config from NVS ---"));
     preferences.begin("davaylora", false); 
@@ -65,6 +66,7 @@
     DEBUGln(F("Config loaded."));
  } // конец функции loadConfig
  
+ // Сохранение новых настроек после изменения их через Wi-Fi портал
  void saveConfig() {
     DEBUGln(F("--- Saving config to NVS ---"));
     preferences.begin("davaylora", false);

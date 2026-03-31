@@ -6,7 +6,7 @@
  #include "Config.h"
 
  // Локальные макросы отладки
- #define DEBUG_ENABLE
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -31,9 +31,11 @@
  unsigned long wakeUpHoldTime = 2000;     
  unsigned long wakeUpReleaseWindow = 2000; 
  
+ // По умолчанию включен только свет
  bool enableBigLed = true;             
  bool enableBuzzer = false;            
  
+ // Загрузка сохраненных настроек при включении приемника
  void loadConfig() {
     DEBUGln(F("--- Loading config from NVS ---"));
     preferences.begin("davaylora", false);
@@ -59,6 +61,7 @@
     DEBUGln(F("Config loaded."));
  } // конец функции loadConfig
  
+ // Сохранение новых настроек, когда пульт присылает их пакет по воздуху
  void saveConfigFromPacket(ConfigPacket* p) {
     DEBUGln(F("--- Saving received config struct to NVS ---"));
     DEBUG(F("workAddress: ")); DEBUGln(p->workAddress);

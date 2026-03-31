@@ -1,7 +1,8 @@
 /**
  * @file Config.h
  * @version 1.53
- * @brief Глобальные настройки и работа с NVS (TX)
+ * @brief Глобальные настройки и работа с энергонезависимой памятью NVS (TX)
+ * Описание: Хранит все пользовательские настройки (таймауты, яркости, адреса).
  */
  #ifndef CONFIG_H
  #define CONFIG_H
@@ -9,6 +10,7 @@
  #include <Arduino.h>
  #include <Preferences.h>
  
+ // Структура пакета настроек для передачи на приемник (RX)
  #pragma pack(push, 1)
  struct ConfigPacket {
     byte workAddress;

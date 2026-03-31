@@ -2,6 +2,7 @@
  * @file RadioComm.h
  * @version 1.53
  * @brief Модуль радиосвязи SX1262 и протокол (TX)
+ * Описание: Отвечает за прием и передачу пакетов, содержит коды команд протокола.
  */
  #ifndef RADIOCOMM_H
  #define RADIOCOMM_H
@@ -10,24 +11,24 @@
  #include <RadioLib.h>
  #include <SPI.h>
  
- // --- Макросы команд ---
- #define CMD_SIGNAL         208
- #define CMD_SIGNAL_OK      209
- #define CMD_PING           212
- #define CMD_PING_OK        213
- #define CMD_SLEEP          214
- #define CMD_SLEEP_OK       215
- #define CMD_CONFIG         216
- #define CMD_CONFIG_OK      217
- #define CMD_NORMAL_MODE    218
- #define CMD_NORMAL_MODE_OK 219
- #define CMD_SYNC_CONFIG    220
- #define CMD_SYNC_CONFIG_OK 221
- #define CMD_REBOOT         222
- #define CMD_EXEC_CONFIG    223
- #define CMD_EXEC_CONFIG_OK 224
- #define CMD_CYCLE_EXEC     225
- #define CMD_CYCLE_EXEC_OK  226
+ // --- Макросы команд (Протокол связи v1.53) ---
+ #define CMD_SIGNAL         208  // Передача состояния главной кнопки
+ #define CMD_SIGNAL_OK      209  // Подтверждение приема сигнала
+ #define CMD_PING           212  // Контроль качества связи (Keep-alive)
+ #define CMD_PING_OK        213  // Подтверждение пинга
+ #define CMD_SLEEP          214  // Централизованная команда на засыпание
+ #define CMD_SLEEP_OK       215  // Подтверждение сна
+ #define CMD_CONFIG         216  // Синхронный переход в режим настройки (Web)
+ #define CMD_CONFIG_OK      217  // Подтверждение режима настройки
+ #define CMD_NORMAL_MODE    218  // Принудительный возврат в рабочий режим
+ #define CMD_NORMAL_MODE_OK 219  // Подтверждение возврата
+ #define CMD_SYNC_CONFIG    220  // Отправка структуры с настройками на RX
+ #define CMD_SYNC_CONFIG_OK 221  // Успешная синхронизация настроек
+ #define CMD_REBOOT         222  // Приказ на немедленную перезагрузку приемника
+ #define CMD_EXEC_CONFIG    223  // Переход в режим изменения сигналов на лету
+ #define CMD_EXEC_CONFIG_OK 224  // Подтверждение режима изменения сигналов
+ #define CMD_CYCLE_EXEC     225  // Команда переключения исполнительных устройств (свет/вибро)
+ #define CMD_CYCLE_EXEC_OK  226  // Подтверждение переключения
  
  #define WORK_FREQUENCY 434E6
  #define MAX_ADDRESS 20

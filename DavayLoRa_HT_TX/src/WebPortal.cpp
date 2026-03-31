@@ -8,7 +8,7 @@
  #include "webpage.h" 
  
  // Локальные макросы отладки
- #define DEBUG_ENABLE
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -32,6 +32,7 @@
  const String MSG_HEADER = F("<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><style>body{font-family:sans-serif;text-align:center;margin-top:30%;font-size:1.5rem;background-color:#f4f4f9;color:#333;}</style></head><body>");
  const String MSG_FOOTER = F("</body></html>");
  
+ // Отдача главной страницы настроек
  void handleRoot() {
     DEBUGln(F("[WIFI] Client requested root page"));
     String html = String(index_html);
@@ -40,6 +41,7 @@
     long remainingSec = (configTimeout > elapsed) ? (configTimeout - elapsed) / 1000 : 0;
     html.replace("%TIME_LEFT%", String(remainingSec));
  
+    // Подстановка текущих значений в HTML-шаблон
     html.replace("%ADDR%", String(workAddress));
     html.replace("%BAT_CHK%", measurebattery ? "checked" : "");
     html.replace("%BAT_PER%", String(batteryPeriod));
@@ -65,6 +67,7 @@
     server.send(200, "text/html", html);
  } // конец функции handleRoot
  
+ // Обработка кнопки "Сохранить" на веб-странице
  void handleSave() {
     DEBUGln(F("[WIFI] === Web UI: Save Requested ==="));
     
@@ -84,6 +87,7 @@
     rxSettings.rxCutoffTime = server.arg("rxCutoffTime").toInt();
     rxSettings.pingTimeoutRX = server.arg("pingTimeoutRX").toInt();
  
+    // Синхронизация с RX перед сохранением
     if (syncConfigToRX()) {
       DEBUGln(F("[WIFI] === RX Confirmed. Proceeding with Reboot ==="));
       
@@ -118,6 +122,7 @@
     } // конец проверки успешной синхронизации
  } // конец функции handleSave
  
+ // Обработка кнопки "Отмена" на веб-странице
  void handleCancel() {
     DEBUGln(F("[WIFI] Received Cancel Request from browser"));
     server.send(200, "text/html", MSG_HEADER + "<h2>🚪 Cancelled.<br>Returning to Normal Mode.</h2>" + MSG_FOOTER);
@@ -140,6 +145,7 @@
     server.on("/cancel", HTTP_GET, handleCancel);
     
     // ФУНКЦИЯ, КОТОРУЮ НЕЛЬЗЯ УДАЛЯТЬ (Captive Portal Redirect)
+    // Перенаправляет все неизвестные запросы на главную страницу портала
     server.onNotFound([]() {
       server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString(), true);
       server.send(302, "text/plain", "");

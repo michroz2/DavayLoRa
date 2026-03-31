@@ -6,7 +6,7 @@
  #include "Battery.h"
 
  // Локальные макросы отладки
- #define DEBUG_ENABLE
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -17,6 +17,7 @@
  
  bool isBatteryConnected = false;
  
+ // Проверяет, подключена ли батарея, делая несколько замеров
  bool testBattery() { return batteryVoltageOK(5); } // конец функции testBattery
  
  bool batteryVoltageOK(byte tries) {
@@ -30,6 +31,7 @@
     return (maxV - minV) <= 0.05;
  } // конец функции batteryVoltageOK
  
+ // Чтение реального напряжения через внутренний АЦП и делитель
  float batteryVoltage() {
     digitalWrite(PIN_ADC_CTRL, LOW); delay(10);
     float measuredvbat = analogRead(PIN_BATTERY_INTERNAL);
@@ -38,6 +40,7 @@
     return measuredvbat;
  } // конец функции batteryVoltage
  
+ // Индикация заряда (от 1 до 5 вспышек в зависимости от напряжения)
  void showBatteryVoltage() {
     float voltage = batteryVoltage();
     if (voltage > BATTERY_VOLTAGE_1) flashBatteryLEDOnce(); 
@@ -47,12 +50,14 @@
     if (voltage > BATTERY_VOLTAGE_5) flashBatteryLEDOnce(); 
  } // конец функции showBatteryVoltage
  
+ // Индикация отсутствия батареи (длинная вспышка)
  void showNoBattery() { 
     digitalWrite(PIN_BATTERY_LED, 1); delay(2000); digitalWrite(PIN_BATTERY_LED, 0); delay(250); 
  } // конец функции showNoBattery
  
  void flashBatteryLEDOnce() { updateStatusLed(true); delay(250); updateStatusLed(false); delay(250); } // конец функции flashBatteryLEDOnce
  
+ // Регулярная проверка. Если батарея села - уходим в сон
  void processBattery() { if (batteryVoltage() < BATTERY_MIN_VOLTAGE) stopWorking(); } // конец функции processBattery
  
  void stopWorking() { 

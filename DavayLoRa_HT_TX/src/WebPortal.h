@@ -2,6 +2,7 @@
  * @file WebPortal.h
  * @version 1.53
  * @brief Веб-интерфейс (Captive Portal) для настройки параметров (TX)
+ * Описание: Позволяет настраивать параметры через смартфон без установки приложений.
  */
  #ifndef WEBPORTAL_H
  #define WEBPORTAL_H

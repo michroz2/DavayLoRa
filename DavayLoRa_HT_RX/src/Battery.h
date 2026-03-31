@@ -2,6 +2,7 @@
  * @file Battery.h
  * @version 1.53
  * @brief Подсистема питания и контроля батареи (RX)
+ * Описание: Отвечает за замеры напряжения аккумулятора и защиту от глубокого разряда.
  */
  #ifndef BATTERY_H
  #define BATTERY_H
@@ -24,7 +25,7 @@
  
  extern bool isBatteryConnected;
  
- // Внешние зависимости
+ // Внешние зависимости (из main.cpp)
  extern void enterDeepSleep();
  
  // Прототипы функций

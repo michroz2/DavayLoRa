@@ -7,7 +7,7 @@
  #include "Config.h"
  
  // Локальные макросы отладки
- #define DEBUG_ENABLE
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -34,6 +34,7 @@
  unsigned long lastSendTime = 0;
  volatile bool receivedFlag = false;
  
+ // Список рабочих частот (каналов связи)
  unsigned long workingFrequency[MAX_ADDRESS] = {
     434000000, 434120000, 434240000, 433820000, 433700000, 433940000, 434030000,
     434150000, 434270000, 433850000, 433730000, 433970000, 434060000, 434180000,
@@ -57,6 +58,7 @@
     radio.setSyncWord(RADIOLIB_SX126X_SYNC_WORD_PRIVATE); 
  } // конец функции setLoRaParams
  
+ // Отправка пакета-ответа пульту
  void transmitPacket(byte* payload, size_t size) {
     DEBUG(F("[RADIO] >>> TX Packet [Size: ")); DEBUG(size); DEBUG(F("]: "));
     for (size_t i = 0; i < size; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
@@ -68,9 +70,9 @@
     } // конец проверки ошибки передачи
     
     lastSendTime = millis();
-    pingTimeOutLastTime = lastSendTime; 
+    pingTimeOutLastTime = lastSendTime; // Сброс таймера отсутствия связи
     receivedFlag = false; 
-    radio.startReceive(); 
+    radio.startReceive(); // Немедленный возврат к прослушиванию эфира
  } // конец функции transmitPacket
  
  void sendMessage(byte msgAddr, byte msgCmd, byte msgData) {
@@ -78,6 +80,7 @@
     transmitPacket(payload, 3);                         
  } // конец функции sendMessage
  
+ // Проверка прерывания: пришел ли пакет из эфира
  void checkReceive() {
     if (receivedFlag) {
       receivedFlag = false;
@@ -90,17 +93,20 @@
     } // конец проверки флага прерывания
  } // конец функции checkReceive
  
+ // Обработка входящего пакета и передача команды в стейт-машину
  void onReceive(byte* payload, int packetSize) {
     DEBUG(F("[RADIO] <<< RX Packet [Size: ")); DEBUG(packetSize); DEBUG(F("]: "));
     for (int i = 0; i < packetSize; i++) { DEBUG(payload[i]); DEBUG(F(" ")); }
     DEBUGln();
  
+    // Адресный фильтр: игнорируем чужие пульты
     rcvAddress = payload[0];
     if (rcvAddress != workAddress) {
       DEBUGln(F("\t[!] Ignored: Wrong address"));
       return;
     } // конец проверки адреса
  
+    // Стандартный пакет управления
     if (packetSize == 3) {
       rcvCmd = payload[1];
       rcvData = payload[2];
@@ -111,6 +117,7 @@
         ESP.restart();
       } // конец обработки команды перезагрузки
     } 
+    // Длинный пакет: Синхронизация структуры настроек по воздуху
     else if (packetSize == (sizeof(ConfigPacket) + 2) && payload[1] == CMD_SYNC_CONFIG) {
       DEBUGln(F("[RADIO] <<< Received Config Struct from TX!"));
       

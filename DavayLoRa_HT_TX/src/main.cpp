@@ -1,7 +1,8 @@
 /**
  * @file main.cpp (TX)
- * @version 1.52 (TX: Перегруппировка функций для удобочитаемости)
+ * @version 1.53
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
+ * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
 
  #include <Arduino.h>
@@ -22,7 +23,8 @@
  
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И МАКРОСЫ =======================
  
- #define DEBUG_ENABLE
+ // Локальные макросы отладки
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -51,10 +53,10 @@
  bool pingFlash;
  
  enum SystemState {
-    STATE_NORMAL,          
-    STATE_PREPARATION,     
-    STATE_CONFIG_STANDBY,  
-    STATE_EXEC_CONFIG      
+    STATE_NORMAL,          // Рабочий режим (передача сигналов)
+    STATE_PREPARATION,     // Режим подготовки (ожидание серии кликов)
+    STATE_CONFIG_STANDBY,  // Ожидание запуска Wi-Fi
+    STATE_EXEC_CONFIG      // Режим переключения типа сигнала на лету
  };
  SystemState currentState = STATE_NORMAL;
  
@@ -150,6 +152,7 @@
     radio.sleep();
     SPI.end();
     
+    // Симметричное отключение пинов SPI, как в RX, для устранения паразитных утечек тока
     pinMode(csPin, INPUT); pinMode(mosiPin, INPUT); pinMode(misoPin, INPUT);
     pinMode(sckPin, INPUT); pinMode(resetPin, INPUT); pinMode(busyPin, INPUT);
     pinMode(irqPin, INPUT);
@@ -220,6 +223,7 @@
         DEBUGln(F("[ACTION] Main Button PRESSED"));
         if (currentState == STATE_NORMAL) {
           buttonPressStartTime = millis(); pingTimer = millis(); buttonPressedFirstTime = true;
+          // Передача сигнала "ACTION!"
           if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 300, WORK_COMM_ATTEMPTS)) {
             updateStatusLed(true); updateBIGLed(true);    
           } else { updateBIGLed(false); flashStatusLed(2); }
@@ -233,6 +237,7 @@
       } else { // Отпущена
         DEBUGln(F("[ACTION] Main Button RELEASED"));
         if (currentState == STATE_NORMAL) {
+          // Отмена сигнала "ACTION!"
           sendMessage(CMD_SIGNAL, false); updateStatusLed(false); updateBIGLed(false);
         } // конец условия для нормального режима
       } // конец условия проверки нажатия
@@ -251,6 +256,7 @@
  
  // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
  
+ // Режим подготовки. Ожидает определенное количество кликов для перехода в другие режимы.
  void processPreparationMode() {
     EVERY_MS(166) {
       static bool prepLedState = false;
@@ -258,15 +264,19 @@
       updateStatusLed(prepLedState);
     } // конец интервала мигания
  
+    // Проверка завершения ввода серии кликов
     if (prepClickCount > 0 && (millis() - lastPrepClickTime > 600)) {
       if (prepClickCount == 2) { 
+        // 2 клика: Выключение приборов (Сон)
         sleepSystem(); 
       } else if (prepClickCount == 3) {
+        // 3 клика: Смена типа сигнала актеру (свет/вибро)
         commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 500, WORK_COMM_ATTEMPTS);
         DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
         currentState = STATE_EXEC_CONFIG; execModeTimer = millis(); 
         execBlinkActive = true; execBlinkStartTime = millis(); execClickCount = 0;
       } else if (prepClickCount == 4) {
+        // 4 клика: Полная настройка через телефон (Wi-Fi Портал)
         commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 500, WORK_COMM_ATTEMPTS);
         DEBUGln(F("[STATE] ---> STATE_CONFIG_STANDBY"));
         currentState = STATE_CONFIG_STANDBY; pingTimer = millis();
@@ -278,27 +288,32 @@
       prepClickCount = 0; 
     } // конец условия окончания кликов
  
+    // Если пользователь ничего не нажал в течение 10 секунд - возврат в рабочий режим
     if (millis() - prepModeTimer > 10000 && currentState == STATE_PREPARATION) {
       DEBUGln(F("[STATE] Prep mode timeout -> Exit to STATE_NORMAL"));
       currentState = STATE_NORMAL; updateStatusLed(false);
     } // конец условия таймаута режима подготовки
  } // конец функции processPreparationMode
  
+ // Ожидание в режиме настройки (до включения Wi-Fi)
  void processConfigStandby() {
     processConfigLed();
  
     if (configClickCount > 0 && (millis() - lastConfigClickTime > 600)) {
       if (configClickCount == 2) {
+        // 2 клика: Возврат в рабочий режим
         if (isWifiActive) stopWiFiPortal();
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
         DEBUGln(F("[STATE] ---> STATE_NORMAL (Exited Config via button)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
       } else if (configClickCount == 1) { 
+        // 1 клик: Активация точки доступа Wi-Fi
         if (!isWifiActive) startWiFiPortal(); 
       } // конец разбора кликов настройки
       configClickCount = 0;
     } // конец условия обработки кликов
  
+    // Keep-alive для удержания приемника в режиме настройки
     if ((millis() - pingTimer) > pingTimeout) {
       if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 500, WORK_COMM_ATTEMPTS)) {
         configBlinkActive = true; configBlinkStartTime = millis(); 
@@ -311,6 +326,7 @@
     } // конец проверки интервала пинга
  } // конец функции processConfigStandby
  
+ // Ожидание в режиме переключения исполнительных устройств
  void processExecConfigStandby() {
     processExecConfigLed();
  
@@ -322,10 +338,12 @@
  
     if (execClickCount > 0 && (millis() - lastExecClickTime > 600)) {
       if (execClickCount == 2) {
+        // 2 клика: Выход и сохранение
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
         DEBUGln(F("[STATE] ---> STATE_NORMAL (Exited Exec Config via button)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
       } else if (execClickCount == 1) {
+        // 1 клик: Цикличное переключение режимов света/вибро на приемнике
         if (commSession(CMD_CYCLE_EXEC, 1, CMD_CYCLE_EXEC_OK, 500, WORK_COMM_ATTEMPTS)) {
            rxSettings.rxEnableBigLed = (rcvData & 0x01);
            rxSettings.rxEnableBuzzer = (rcvData & 0x02) >> 1;
@@ -335,6 +353,7 @@
       execClickCount = 0;
     } // конец условия обработки кликов
  
+    // Keep-alive
     if ((millis() - pingTimer) > pingTimeout) {
       if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 500, WORK_COMM_ATTEMPTS)) {
         execBlinkActive = true; execBlinkStartTime = millis(); 
@@ -346,8 +365,9 @@
     } // конец проверки интервала пинга
  } // конец функции processExecConfigStandby
  
+ // Постоянный контроль качества связи (Heartbeat) в рабочем режиме
  void processPing() {
-    if (!buttonPressedFirstTime) return; 
+    if (!buttonPressedFirstTime) return; // Пинг начинается только после первого клика
     
     if (pingFlash) {
       if ((millis() - pingFlashTimer) > PING_FLASH) {
@@ -357,7 +377,7 @@
       if (commSession(CMD_PING, currButtonState, CMD_PING_OK, 500, WORK_COMM_ATTEMPTS)) {
         updateStatusLed(!currButtonState); pingFlash = true;
         pingFlashTimer = millis(); pingTimer = millis();
-      } else { flashStatusLed(2); } // конец условия ошибки пинга
+      } else { flashStatusLed(2); } // Ошибка связи: двойная вспышка
     } // конец проверки таймера пинга
     
     if ((millis() - lastButtonTime) > bigTimeout) {
@@ -374,7 +394,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.52 ==========="));
+    DEBUGln(F("=========== START TX v1.53 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -455,6 +475,7 @@
     if ((millis() - lastButtonTime) > DEBOUNCE_TIME) processButton();
     processUserButton(); 
     
+    // Удержание кнопки 10 секунд для входа в режим подготовки
     if (currentState == STATE_NORMAL && currButtonState) {
       if (millis() - buttonPressStartTime > 10000) {
         DEBUGln(F("[STATE] ---> STATE_PREPARATION"));
@@ -463,11 +484,13 @@
       } // конец условия перехода в подготовку
     } // конец условия зажатия кнопки
  
+    // Маршрутизация логики в зависимости от текущего состояния
     if (currentState == STATE_NORMAL) processPing();
     else if (currentState == STATE_PREPARATION) processPreparationMode();
     else if (currentState == STATE_CONFIG_STANDBY) processConfigStandby();
     else if (currentState == STATE_EXEC_CONFIG) processExecConfigStandby();
     
+    // Обработка Wi-Fi портала, если он запущен
     if (isWifiActive) {
       dnsServer.processNextRequest();
       server.handleClient();

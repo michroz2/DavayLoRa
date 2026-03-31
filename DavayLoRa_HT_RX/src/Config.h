@@ -1,7 +1,8 @@
 /**
  * @file Config.h
  * @version 1.53
- * @brief Глобальные настройки и работа с NVS (RX)
+ * @brief Глобальные настройки и работа с энергонезависимой памятью NVS (RX)
+ * Описание: Хранит параметры приемника и принимает новые конфигурации от пульта.
  */
  #ifndef CONFIG_H
  #define CONFIG_H
@@ -9,6 +10,7 @@
  #include <Arduino.h>
  #include <Preferences.h>
  
+ // Структура пакета настроек, приходящая от TX при синхронизации (CMD_SYNC_CONFIG)
  #pragma pack(push, 1)
  struct ConfigPacket {
     byte workAddress;
@@ -32,7 +34,7 @@
  // Глобальный объект Preferences (нужен в main.cpp для CMD_CYCLE_EXEC)
  extern Preferences preferences;
  
- // Локальные переменные RX
+ // Локальные переменные RX (активные настройки)
  extern byte workAddress;                 
  extern int pwmledBrightness;            
  extern int buzzerVolume;               
@@ -47,6 +49,7 @@
  extern unsigned long wakeUpHoldTime;     
  extern unsigned long wakeUpReleaseWindow; 
  
+ // Флаги активных исполнительных устройств (Свет / Вибрация)
  extern bool enableBigLed;             
  extern bool enableBuzzer;            
  
