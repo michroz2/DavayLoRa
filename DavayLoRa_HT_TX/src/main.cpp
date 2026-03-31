@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.54 (TX: Идеальный сон - аппаратное удержание состояний пинов VEXT и ADC)
+ * @version 1.55 (TX: Оптимизация Active Mode - отключение Wi-Fi на старте и FreeRTOS Yield)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
@@ -9,6 +9,7 @@
  #include <esp_sleep.h>
  #include <driver/rtc_io.h>
  #include <driver/gpio.h> // Добавлено для функций заморозки пинов (gpio_hold)
+ #include <WiFi.h>        // Добавлено для принудительного отключения модема на старте
  
  #include "Battery.h" 
  #include "Config.h"  
@@ -25,7 +26,7 @@
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И МАКРОСЫ =======================
  
  // Локальные макросы отладки
- #define DEBUG_ENABLE // Логирование включено
+ // #define DEBUG_ENABLE // Логирование выключено
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -401,13 +402,17 @@
     gpio_deep_sleep_hold_dis();
     // ----------------------------------------
  
+    // --- ОТКЛЮЧЕНИЕ RF-МОДЕМА НА СТАРТЕ ДЛЯ ЭКОНОМИИ ЭНЕРГИИ ---
+    WiFi.mode(WIFI_OFF);
+    // -----------------------------------------------------------
+ 
  #ifdef DEBUG_ENABLE
     Serial.begin(115200);
     while (!Serial); 
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.54 ==========="));
+    DEBUGln(F("=========== START TX v1.55 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -519,4 +524,7 @@
     EVERY_MS(batteryPeriod) { 
       if (measurebattery && isBatteryConnected) processBattery(); 
     } // конец интервала проверки батареи
+ 
+    // --- FREERTOS YIELD: Передача управления ОС для охлаждения процессора и экономии батареи ---
+    delay(1); 
  } // конец функции loop
