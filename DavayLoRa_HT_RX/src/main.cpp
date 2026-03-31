@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.55 (RX: Оптимизация Active Mode - отключение Wi-Fi на старте и FreeRTOS Yield)
+ * @version 1.59 (RX: Добавлено логирование всех состояний кнопки USER)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Описание: Ядро стейт-машины, логика переключения режимов и обработка геркона/кнопки.
  */
@@ -28,7 +28,7 @@
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И МАКРОСЫ =======================
  
  // Локальные макросы отладки
- // #define DEBUG_ENABLE // Логирование выключено
+ #define DEBUG_ENABLE // Логирование ВКЛЮЧЕНО
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -202,13 +202,29 @@
  
  void processUserButton() {
     static unsigned long userButtonTimer = 0;
-    if (digitalRead(PIN_USER) == LOW) { 
-      if (userButtonTimer == 0) userButtonTimer = millis();
-      else if (millis() - userButtonTimer > 5000) {
+    static bool prevUserState = HIGH;
+    bool currUserState = digitalRead(PIN_USER);
+    
+    // Отслеживание физического нажатия и отпускания кнопки
+    if (currUserState != prevUserState) {
+      if (currUserState == LOW) {
+        DEBUGln(F("[ACTION] USER Button PRESSED"));
+        userButtonTimer = millis();
+      } else {
+        DEBUGln(F("[ACTION] USER Button RELEASED"));
+        userButtonTimer = 0;
+      }
+      prevUserState = currUserState;
+    } // конец отслеживания состояний
+    
+    // Таймер долгого удержания (5 секунд)
+    if (currUserState == LOW && userButtonTimer > 0) {
+      if (millis() - userButtonTimer > 5000) {
         DEBUGln(F("[ACTION] USER button held 5s -> Local Sleep"));
         goToSleep(); 
+        userButtonTimer = 0; // Сброс таймера для предотвращения спама
       } // конец проверки удержания USER
-    } else userButtonTimer = 0; 
+    } // конец проверки зажатия
  } // конец функции processUserButton
  
  // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
@@ -350,8 +366,12 @@
     while (!Serial); 
  #endif
  
+    // --- СНИЖЕНИЕ ЧАСТОТЫ ПРОЦЕССОРА ДЛЯ ЭКОНОМИИ ЭНЕРГИИ В РАБОЧЕМ РЕЖИМЕ ---
+    setCpuFrequencyMhz(80);
+    // -------------------------------------------------------------------------
+ 
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.55 ==========="));
+    DEBUGln(F("=========== START RX v1.59 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);

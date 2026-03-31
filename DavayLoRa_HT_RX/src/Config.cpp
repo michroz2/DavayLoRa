@@ -1,12 +1,12 @@
 /**
  * @file Config.cpp
- * @version 1.53
+ * @version 1.58 (RX: Исправление NVS бага 16 символов для длительности прощального мигания)
  * @brief Реализация загрузки и сохранения настроек (RX)
  */
  #include "Config.h"
 
  // Локальные макросы отладки
- // #define DEBUG_ENABLE // Логирование выключено
+ #define DEBUG_ENABLE // Логирование ВКЛЮЧЕНО
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -48,7 +48,9 @@
     pingTimeout = preferences.getULong("pingTimeout", 9000);
     stuckSleepTime = preferences.getULong("stuckSleep", 10000);
     configTimeout = preferences.getULong("confTo", 600000);
-    sleepLedDuration = preferences.getULong("sleepLedDuration", 2000);
+    
+    // ИСПРАВЛЕНИЕ: Используем короткий ключ "sleepLedDur" (менее 15 символов)
+    sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
     
     enableBigLed = preferences.getBool("enBigLed", true);
     enableBuzzer = preferences.getBool("enBuzzer", false);
@@ -77,7 +79,9 @@
     preferences.putULong("wkUpRel", p->wakeUpReleaseWindow);
     preferences.putULong("stuckSleep", p->stuckSleepTime);
     preferences.putULong("confTo", p->configTimeout);
-    preferences.putULong("sleepLedDuration", p->sleepLedDuration);
+    
+    // ИСПРАВЛЕНИЕ: Используем короткий ключ "sleepLedDur"
+    preferences.putULong("sleepLedDur", p->sleepLedDuration);
     
     preferences.putBool("enBigLed", p->rxEnableBigLed);
     preferences.putInt("bigLedBright", p->rxPwmledBrightness);

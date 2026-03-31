@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.55 (TX: Оптимизация Active Mode - отключение Wi-Fi на старте и FreeRTOS Yield)
+ * @version 1.59 (TX: Добавлено логирование всех состояний кнопки USER)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
@@ -26,7 +26,7 @@
  // ======================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И МАКРОСЫ =======================
  
  // Локальные макросы отладки
- // #define DEBUG_ENABLE // Логирование выключено
+ #define DEBUG_ENABLE // Логирование ВКЛЮЧЕНО
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -175,12 +175,22 @@
     rtc_gpio_pullup_en((gpio_num_t)PIN_BUTTON);
     rtc_gpio_pulldown_dis((gpio_num_t)PIN_BUTTON);
     
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+    // --- ИСПРАВЛЕНИЕ БАГА: Защита от бесконечного просыпания при зажатой кнопке ---
+    if (digitalRead(PIN_BUTTON) == LOW) {
+      DEBUGln(F("[STATE] Button is STUCK. Sleeping with timer..."));
+      esp_sleep_enable_timer_wakeup(stuckSleepTime * 1000ULL);
+    } else {
+      DEBUGln(F("[STATE] Normal sleep. Wakeup on EXT0 (Button). Good night!"));
+      esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BUTTON, 0);
+    }
+    // ------------------------------------------------------------------------------
+ 
     esp_deep_sleep_start();
  } // конец функции enterDeepSleep
  
  void runWakeUpProtection(uint8_t wakeupPin) {
     esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) enterDeepSleep(); 
     
     if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
       DEBUGln(F("[STATE] Woke up. Checking protection..."));
@@ -254,12 +264,29 @@
  
  void processUserButton() {
     static unsigned long userButtonTimer = 0;
-    if (digitalRead(PIN_USER) == LOW) { 
-      if (userButtonTimer == 0) userButtonTimer = millis();
-      else if (millis() - userButtonTimer > 5000) { 
-        sleepSystem(); userButtonTimer = 0; 
+    static bool prevUserState = HIGH;
+    bool currUserState = digitalRead(PIN_USER);
+    
+    // Отслеживание физического нажатия и отпускания кнопки
+    if (currUserState != prevUserState) {
+      if (currUserState == LOW) {
+        DEBUGln(F("[ACTION] USER Button PRESSED"));
+        userButtonTimer = millis();
+      } else {
+        DEBUGln(F("[ACTION] USER Button RELEASED"));
+        userButtonTimer = 0;
+      }
+      prevUserState = currUserState;
+    } // конец отслеживания состояний
+    
+    // Таймер долгого удержания (5 секунд)
+    if (currUserState == LOW && userButtonTimer > 0) {
+      if (millis() - userButtonTimer > 5000) { 
+        DEBUGln(F("[ACTION] USER button held 5s -> Local Sleep"));
+        sleepSystem(); 
+        userButtonTimer = 0; // Сброс таймера для предотвращения спама
       } // конец условия зажатия 5 сек
-    } else { userButtonTimer = 0; } // конец условия отпускания кнопки
+    } // конец проверки зажатия
  } // конец функции processUserButton
  
  // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
@@ -411,8 +438,12 @@
     while (!Serial); 
  #endif
  
+    // --- СНИЖЕНИЕ ЧАСТОТЫ ПРОЦЕССОРА ДЛЯ ЭКОНОМИИ ЭНЕРГИИ В РАБОЧЕМ РЕЖИМЕ ---
+    setCpuFrequencyMhz(80);
+    // -------------------------------------------------------------------------
+ 
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.55 ==========="));
+    DEBUGln(F("=========== START TX v1.59 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);

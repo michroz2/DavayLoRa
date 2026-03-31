@@ -1,6 +1,6 @@
 /**
  * @file WebPortal.cpp
- * @version 1.53
+ * @version 1.56
  * @brief Реализация Captive Portal (TX)
  */
  #include "WebPortal.h"
@@ -8,7 +8,7 @@
  #include "webpage.h" 
  
  // Локальные макросы отладки
- // #define DEBUG_ENABLE // Логирование выключено
+ #define DEBUG_ENABLE // Логирование ВКЛЮЧЕНО
  #ifdef DEBUG_ENABLE
  #define DEBUG(x) Serial.print(x)
  #define DEBUGln(x) Serial.println(x)
@@ -130,6 +130,10 @@
  } // конец функции handleCancel
  
  void startWiFiPortal() {
+    // --- ВОЗВРАТ ЧАСТОТЫ ДЛЯ СТАБИЛЬНОЙ РАБОТЫ WI-FI И ВЕБ-СЕРВЕРА ---
+    setCpuFrequencyMhz(240);
+    DEBUGln(F("[STATE] CPU Frequency boosted to 240MHz for WiFi Operations"));
+    
     DEBUGln(F("[WIFI] Starting WiFi AP (Captive Portal)..."));
     WiFi.mode(WIFI_AP);
     
@@ -165,4 +169,8 @@
     WiFi.mode(WIFI_OFF);
     isWifiActive = false;
     DEBUGln(F("[WIFI] WiFi Stopped."));
+ 
+    // --- СНИЖЕНИЕ ЧАСТОТЫ ПОСЛЕ ОТКЛЮЧЕНИЯ WI-FI ДЛЯ ЭКОНОМИИ БАТАРЕИ ---
+    setCpuFrequencyMhz(80);
+    DEBUGln(F("[STATE] CPU Frequency reduced back to 80MHz"));
  } // конец функции stopWiFiPortal
