@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.63 (RX: Возврат оригинального форматирования + Зеркальный адаптивный ответ)
+ * @version 1.67 (RX: Использование глобального лимита maxPower + Полное восстановление структуры и комментариев)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Описание: Ядро стейт-машины, логика переключения режимов и обработка геркона/кнопки.
  */
@@ -227,7 +227,7 @@
     } // конец проверки зажатия
  } // конец функции processUserButton
  
- // ======================= СТЕЙТ-МАШИНА И БИЗНЕС-ЛОГИКА =======================
+ // ======================= РАДИООБМЕН =======================
  
  // Исполнение команд, принятых из эфира
  void processCommand() {
@@ -238,7 +238,7 @@
       case CMD_SIGNAL:
         // Главный рабочий сигнал (Вкл/Выкл свет или вибро у актера)
         signalStatus = rcvData; processSignal();
-        radio.setOutputPower(22); // Ответы на Action всегда на макс
+        radio.setOutputPower(maxPower); // Ответы на Action всегда на максимум из конфига
         if (signalStatus) sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus); 
         break;
       case CMD_PING: {
@@ -261,11 +261,11 @@
         sendMessage(rcvAddress, CMD_PING_OK, replyByte);     
         
         delay(50); updateStatusLed(false);
-        radio.setOutputPower(22); // Возврат на 22 дБм для готовности к Action
+        radio.setOutputPower(maxPower); // Возврат на maxPower для готовности к Action
         break;
       } // конец обработки CMD_PING
       case CMD_SLEEP:
-        radio.setOutputPower(22);
+        radio.setOutputPower(maxPower);
         sendMessage(rcvAddress, CMD_SLEEP_OK, 1); 
         delay(100); goToSleep();
         break;
@@ -273,7 +273,7 @@
         DEBUGln(F("[STATE] ---> STATE_CONFIG"));
         currentState = STATE_CONFIG;
         pingTimeOutLastTime = millis();
-        radio.setOutputPower(22);
+        radio.setOutputPower(maxPower);
         sendMessage(rcvAddress, CMD_CONFIG_OK, 1);
         configBlinkActive = true; configBlinkStartTime = millis(); 
         analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
@@ -282,7 +282,7 @@
         DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
         currentState = STATE_EXEC_CONFIG;
         pingTimeOutLastTime = millis();
-        radio.setOutputPower(22);
+        radio.setOutputPower(maxPower);
         sendMessage(rcvAddress, CMD_EXEC_CONFIG_OK, 1);
         execBlinkActive = true; execBlinkStartTime = millis(); 
         analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
@@ -304,7 +304,7 @@
         DEBUG(F("[STATE] Actuators updated. LED: ")); DEBUG(enableBigLed);
         DEBUG(F(", BUZZER: ")); DEBUGln(enableBuzzer);
         
-        radio.setOutputPower(22);
+        radio.setOutputPower(maxPower);
         sendMessage(rcvAddress, CMD_CYCLE_EXEC_OK, state);
         
         // Демонстрация актеру выбранного режима (длится 1 сек)
@@ -318,7 +318,7 @@
         currentState = STATE_NORMAL;
         pingTimeOutLastTime = millis();
         updateStatusLed(false);
-        radio.setOutputPower(22);
+        radio.setOutputPower(maxPower);
         sendMessage(rcvAddress, CMD_NORMAL_MODE_OK, 1);
         break;
     } // конец switch
@@ -387,7 +387,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.63 ==========="));
+    DEBUGln(F("=========== START RX v1.67 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
@@ -417,6 +417,7 @@
     DEBUG(F("RX En. Buzzer: ")); DEBUGln(enableBuzzer ? "YES" : "NO");
     DEBUG(F("RX Cutoff (ms): ")); DEBUGln(cutoffTime);
     DEBUG(F("RX Ping TO (ms): ")); DEBUGln(pingTimeout);
+    DEBUG(F("Max Power Limit: ")); DEBUGln(maxPower);
  
     DEBUGln(F("[STATE] ---> STATE_NORMAL (Boot)"));
  
@@ -510,3 +511,4 @@
     // --- FREERTOS YIELD: Передача управления ОС для охлаждения процессора и экономии батареи ---
     delay(1); 
  } // конец функции loop
+ 

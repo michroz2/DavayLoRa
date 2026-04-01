@@ -1,6 +1,6 @@
 /**
  * @file Config.h
- * @version 1.53
+ * @version 1.64
  * @brief Глобальные настройки и работа с энергонезависимой памятью NVS (RX)
  * Описание: Хранит параметры приемника и принимает новые конфигурации от пульта.
  */
@@ -28,6 +28,7 @@
     int rxBuzzerVolume;
     unsigned long rxCutoffTime;
     unsigned long pingTimeoutRX;
+    int maxPower; // Принимаем ограничение мощности от TX
  };
  #pragma pack(pop)
  
@@ -45,6 +46,7 @@
  extern unsigned long batteryPeriod;    
  extern unsigned long sleepLedDuration;   
  extern unsigned long configTimeout;
+ extern int maxPower; // Лимит мощности передачи
  
  extern unsigned long wakeUpHoldTime;     
  extern unsigned long wakeUpReleaseWindow; 

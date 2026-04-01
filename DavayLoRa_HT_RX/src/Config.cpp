@@ -1,6 +1,6 @@
 /**
  * @file Config.cpp
- * @version 1.58 (RX: Исправление NVS бага 16 символов для длительности прощального мигания)
+ * @version 1.64 (RX: Добавлен прием ограничения максимальной мощности)
  * @brief Реализация загрузки и сохранения настроек (RX)
  */
  #include "Config.h"
@@ -27,6 +27,7 @@
  unsigned long batteryPeriod = 300000;    
  unsigned long sleepLedDuration = 2000;   
  unsigned long configTimeout = 600000;
+ int maxPower = 20; // Инициализация лимита мощности
  
  unsigned long wakeUpHoldTime = 2000;     
  unsigned long wakeUpReleaseWindow = 2000; 
@@ -48,6 +49,7 @@
     pingTimeout = preferences.getULong("pingTimeout", 9000);
     stuckSleepTime = preferences.getULong("stuckSleep", 10000);
     configTimeout = preferences.getULong("confTo", 600000);
+    maxPower = preferences.getInt("maxPwr", 20);
     
     // ИСПРАВЛЕНИЕ: Используем короткий ключ "sleepLedDur" (менее 15 символов)
     sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
@@ -69,6 +71,7 @@
     DEBUG(F("workAddress: ")); DEBUGln(p->workAddress);
     DEBUG(F("rxPwmledBrightness: ")); DEBUGln(p->rxPwmledBrightness);
     DEBUG(F("rxBuzzerVolume: ")); DEBUGln(p->rxBuzzerVolume);
+    DEBUG(F("maxPower: ")); DEBUGln(p->maxPower);
     
     preferences.begin("davaylora", false);
     
@@ -89,6 +92,10 @@
     preferences.putInt("buzzerVol", p->rxBuzzerVolume);
     preferences.putULong("cutoffTime", p->rxCutoffTime);
     preferences.putULong("pingTimeout", p->pingTimeoutRX);
+    preferences.putInt("maxPwr", p->maxPower);
+    
+    // Обновляем глобальную переменную в памяти (важно для работы прямо сейчас)
+    maxPower = p->maxPower;
     
     preferences.end();
     DEBUGln(F("Config saved."));

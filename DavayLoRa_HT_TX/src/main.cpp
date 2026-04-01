@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.64 (TX: Плавный безопасный спуск мощности (Target clamping) и связка Action-Ping)
+ * @version 1.66 (TX: Интеграция Web-настроек мощности + Возврат комментариев форматирования)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
@@ -55,10 +55,7 @@
  bool pingFlash;
  
  // --- ПЕРЕМЕННЫЕ АДАПТАЦИИ МОЩНОСТИ ---
- int currentTxPower = 22;      // Текущая мощность для пингов
- const int servicePower = 18;  // Мощность для сервисных команд
- const int actionPower = 22;   // Мощность для "Action!"
- const int minPowerLimit = -9; // Минимальный порог (аппаратный лимит SX1262)
+ int currentTxPower = 22;      // Текущая мощность (перезаписывается при старте из Config)
  const int targetRssi = -95;   // Целевой уровень сигнала на стороне RX
  // --------------------------------------
  
@@ -230,7 +227,7 @@
  
  void sleepSystem() {
     DEBUGln(F("[ACTION] Sending Centralized SLEEP Command"));
-    currentTxPower = servicePower; // Привязка адаптации к сервисной мощности
+    currentTxPower = servicePower; 
     radio.setOutputPower(currentTxPower);
     DEBUG(F("[RADIO] Send SLEEP (Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm)"));
     commSession(CMD_SLEEP, 1, CMD_SLEEP_OK, 500, WORK_COMM_ATTEMPTS);
@@ -252,8 +249,9 @@
         DEBUGln(F("[ACTION] Main Button PRESSED"));
         if (currentState == STATE_NORMAL) {
           buttonPressStartTime = millis(); pingTimer = millis(); buttonPressedFirstTime = true;
+          
           // Передача сигнала "ACTION!" на максимальной мощности
-          currentTxPower = actionPower; // Инфекция адаптивной переменной максимальной мощностью
+          currentTxPower = maxPower; 
           radio.setOutputPower(currentTxPower);
           DEBUG(F("[RADIO] Send ACTION (Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm)"));
           if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 300, WORK_COMM_ATTEMPTS)) {
@@ -271,7 +269,7 @@
         DEBUGln(F("[ACTION] Main Button RELEASED"));
         if (currentState == STATE_NORMAL) {
           // Отмена сигнала "ACTION!" на максимальной мощности
-          currentTxPower = actionPower;
+          currentTxPower = maxPower;
           radio.setOutputPower(currentTxPower);
           sendMessage(CMD_SIGNAL, false); updateStatusLed(false); updateBIGLed(false);
         } // конец условия для нормального режима
@@ -441,6 +439,11 @@
       } // конец условия гашения вспышки
     } else if ((millis() - pingTimer) > pingTimeout) {
       
+      // Если динамическая мощность выключена - форсируем максимум
+      if (!dynamicPower) {
+        currentTxPower = maxPower;
+      }
+ 
       // Упаковка мощности (currentTxPower + 10) и состояния кнопки (бит 7)
       byte safePower = (byte)(constrain(currentTxPower, -9, 22) + 10);
       byte packedData = (currButtonState << 7) | (safePower & 0x7F);
@@ -452,37 +455,38 @@
         updateStatusLed(!currButtonState); pingFlash = true;
         pingFlashTimer = millis(); pingTimer = millis();
         
-        // Распаковка RSSI из ответа
-        byte rssiRaw = rcvData & 0x7F;
-        int rxRssi = -(int)(rssiRaw + 30);
-        DEBUG(F("[PING] Response Rx RSSI: ")); DEBUGln(rxRssi);
+        if (dynamicPower) {
+            // Распаковка RSSI из ответа
+            byte rssiRaw = rcvData & 0x7F;
+            int rxRssi = -(int)(rssiRaw + 30);
+            DEBUG(F("[PING] Response Rx RSSI: ")); DEBUGln(rxRssi);
+            
+            // Вычисление Дельты и Адаптация мощности
+            int pathLoss = currentTxPower - rxRssi;
+            int idealPower = targetRssi + pathLoss;
+            
+            if (idealPower > currentTxPower) {
+              currentTxPower = idealPower; // Fast UP
+            } else if (idealPower < currentTxPower) {
+              // Безопасный спуск по алгоритму половины пути
+              int safeTarget = idealPower;
+              if (safeTarget < minPower) safeTarget = minPower; 
+              int nextPower = (currentTxPower + safeTarget) / 2;
+              if (currentTxPower - nextPower < 1) nextPower = currentTxPower - 1;
+              currentTxPower = nextPower;
+            } // конец проверки направления мощности
+        } else {
+            DEBUGln(F("[PING] Dynamic Power OFF. Using maxPower."));
+            currentTxPower = maxPower;
+        } // конец проверки флага dynamicPower
         
-        // Вычисление Дельты и Адаптация мощности
-        int pathLoss = currentTxPower - rxRssi;
-        int idealPower = targetRssi + pathLoss;
-        
-        if (idealPower > currentTxPower) {
-          currentTxPower = idealPower; // Fast UP (мгновенный прыжок)
-        } else if (idealPower < currentTxPower) {
-          // Безопасный спуск по алгоритму половины пути
-          int safeTarget = idealPower;
-          if (safeTarget < minPowerLimit) safeTarget = minPowerLimit; // Ограничиваем расчётное дно лимитом прибора
-          
-          int nextPower = (currentTxPower + safeTarget) / 2; // Ровно посередине
-          
-          // Защита от зависания при делении: минимальный шаг вниз = 1 дБм
-          if (currentTxPower - nextPower < 1) nextPower = currentTxPower - 1;
-          
-          currentTxPower = nextPower;
-        }
-        
-        currentTxPower = constrain(currentTxPower, minPowerLimit, 22);
+        currentTxPower = constrain(currentTxPower, minPower, maxPower);
         DEBUG(F("[PING] Adaptive Next Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm"));
         
       } else { 
         flashStatusLed(2); 
-        currentTxPower = actionPower; // Режим паники: возврат на максимум при потере связи
-        DEBUGln(F("[PING] Link Lost! Reset to 22 dBm"));
+        currentTxPower = maxPower; // Panic Mode: возврат на максимум при потере связи
+        DEBUGln(F("[PING] Link Lost! Reset to maxPower"));
       } // Ошибка связи: двойная вспышка
     } // конец проверки таймера пинга
     
@@ -510,7 +514,7 @@
  #endif
  
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.64 ==========="));
+    DEBUGln(F("=========== START TX v1.66 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -520,6 +524,9 @@
  
     DEBUGln(F("[STATE] Loading NVS config..."));
     loadConfig();
+    
+    // Синхронизация стартовой мощности с лимитом из конфигурации
+    currentTxPower = maxPower;
  
     DEBUGln(F("[STATE] Running wake-up protection..."));
     runWakeUpProtection(PIN_BUTTON);
@@ -528,18 +535,10 @@
     DEBUG(F("Work Channel/Address: ")); DEBUGln(workAddress);
     DEBUG(F("TX BIG Brightness: ")); DEBUGln(pwmledBrightness);
     DEBUG(F("TX FB Brightness: ")); DEBUGln(fbledBrightness);
-    
-    // Вывод всех параметров из NVS
-    DEBUG(F("Bat. Period (ms): ")); DEBUGln(batteryPeriod);
-    DEBUG(F("Wake Hold/Rel (ms): ")); DEBUG(wakeUpHoldTime); DEBUG(F("/")); DEBUGln(wakeUpReleaseWindow);
-    DEBUG(F("Stuck Sleep (ms): ")); DEBUGln(stuckSleepTime);
-    DEBUG(F("Config TO (ms): ")); DEBUGln(configTimeout);
-    DEBUG(F("Sleep LED (ms): ")); DEBUGln(sleepLedDuration);
-    DEBUG(F("TX Ping TO (ms): ")); DEBUGln(pingTimeout);
-    DEBUG(F("TX Big TO (ms): ")); DEBUGln(bigTimeout);
-    DEBUG(F("TX Exec TO (ms): ")); DEBUGln(execTimeout);
-    DEBUG(F("RX Ping TO (ms): ")); DEBUGln(pingTimeoutRX);
-    DEBUG(F("RX En. LED/Buz: ")); DEBUG(rxSettings.rxEnableBigLed); DEBUG(F("/")); DEBUGln(rxSettings.rxEnableBuzzer);
+    DEBUG(F("Dynamic Power: ")); DEBUGln(dynamicPower ? "ON" : "OFF");
+    DEBUG(F("Max Power Limit: ")); DEBUGln(maxPower);
+    DEBUG(F("Min Power Limit: ")); DEBUGln(minPower);
+    DEBUG(F("Service Power: ")); DEBUGln(servicePower);
     
     DEBUGln(F("[STATE] ---> STATE_NORMAL (Boot)"));
  
@@ -558,16 +557,10 @@
       isBatteryConnected = testBattery(); 
       if (isBatteryConnected) { 
         DEBUGln(F("[ACTION] Battery connected. Showing voltage (2 times)."));
-        processBattery(); 
-        delay(500); 
-        showBatteryVoltage(); 
-        delay(2000); 
-        showBatteryVoltage(); 
-        delay(500);
+        processBattery(); delay(500); showBatteryVoltage(); delay(2000); showBatteryVoltage(); delay(500);
       } else {
         DEBUGln(F("[ACTION] No battery detected."));
-        showNoBattery(); 
-        delay(500); 
+        showNoBattery(); delay(500); 
       } // конец условия обработки подключенной батареи
     } else {
       DEBUGln(F("[ACTION] Battery measurement disabled in config."));

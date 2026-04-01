@@ -1,8 +1,8 @@
 /**
  * @file Config.h
- * @version 1.53
+ * @version 1.64
  * @brief Глобальные настройки и работа с энергонезависимой памятью NVS (TX)
- * Описание: Хранит все пользовательские настройки (таймауты, яркости, адреса).
+ * Описание: Хранит все пользовательские настройки (таймауты, яркости, адреса, настройки мощности).
  */
  #ifndef CONFIG_H
  #define CONFIG_H
@@ -28,6 +28,7 @@
     int rxBuzzerVolume;
     unsigned long rxCutoffTime;
     unsigned long pingTimeoutRX;
+    int maxPower; // Ограничение максимальной мощности (0-22 дБм)
  };
  #pragma pack(pop)
  
@@ -43,6 +44,7 @@
  extern unsigned long stuckSleepTime; 
  extern unsigned long configTimeout; 
  extern unsigned long sleepLedDuration;   
+ extern int maxPower; // Максимальная мощность (для обеих плат)
  
  // --- Настройки пульта (TX) ---
  extern int pwmledBrightness;            
@@ -50,6 +52,9 @@
  extern unsigned long pingTimeout;     
  extern unsigned long bigTimeout;   
  extern unsigned long execTimeout;    
+ extern bool dynamicPower; // Включение адаптивной мощности
+ extern int minPower;      // Минимальный порог мощности для адаптации (-9 - 0)
+ extern int servicePower;  // Мощность для сервисных команд (0 - 22)
  
  // --- Настройки приемника (для синхронизации) ---
  extern unsigned long pingTimeoutRX;   

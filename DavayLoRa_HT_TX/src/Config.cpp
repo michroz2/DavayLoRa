@@ -1,6 +1,6 @@
 /**
  * @file Config.cpp
- * @version 1.53
+ * @version 1.64
  * @brief Реализация загрузки и сохранения настроек (TX)
  */
  #include "Config.h"
@@ -26,12 +26,16 @@
  unsigned long stuckSleepTime = 10000; 
  unsigned long configTimeout = 600000; 
  unsigned long sleepLedDuration = 2000;   
+ int maxPower = 20; // Максимальная мощность по умолчанию
  
  int pwmledBrightness = 35;            
  int fbledBrightness = 255;            
  unsigned long pingTimeout = 3000;     
  unsigned long bigTimeout = 3600000;   
  unsigned long execTimeout = 30000;    
+ bool dynamicPower = true; // Адаптивная мощность включена
+ int minPower = -9;        // Аппаратный минимум SX1262
+ int servicePower = 18;    // Комфортная мощность для ближней связи
  
  unsigned long pingTimeoutRX = 9000;   
  
@@ -48,12 +52,16 @@
     stuckSleepTime = preferences.getULong("stuckSleep", 10000);
     configTimeout = preferences.getULong("confTo", 600000);
     sleepLedDuration = preferences.getULong("sleepLedDur", 2000);
+    maxPower = preferences.getInt("maxPwr", 20);
     
     pwmledBrightness = preferences.getInt("bigLedBright", 35);
     fbledBrightness = preferences.getInt("fbLedBright", 255);
     pingTimeout = preferences.getULong("pingTimeout", 3000);
     bigTimeout = preferences.getULong("bigTimeout", 3600000);
     execTimeout = preferences.getULong("execTo", 30000); 
+    dynamicPower = preferences.getBool("dynPwr", true);
+    minPower = preferences.getInt("minPwr", -9);
+    servicePower = preferences.getInt("srvPwr", 18);
     
     pingTimeoutRX = preferences.getULong("pingRx", 9000); 
     rxSettings.rxEnableBigLed = preferences.getBool("rxEnBigLed", true);
@@ -61,6 +69,7 @@
     rxSettings.rxEnableBuzzer = preferences.getBool("rxEnBuzzer", false);
     rxSettings.rxBuzzerVolume = preferences.getInt("rxBuzVol", 255);
     rxSettings.rxCutoffTime = preferences.getULong("rxCutoff", 2000);
+    rxSettings.maxPower = maxPower; // Синхронизация структуры
  
     preferences.end();
     DEBUGln(F("Config loaded."));
@@ -79,12 +88,16 @@
     preferences.putULong("stuckSleep", stuckSleepTime);
     preferences.putULong("confTo", configTimeout);
     preferences.putULong("sleepLedDur", sleepLedDuration);
+    preferences.putInt("maxPwr", maxPower);
     
     preferences.putInt("bigLedBright", pwmledBrightness);
     preferences.putInt("fbLedBright", fbledBrightness);
     preferences.putULong("pingTimeout", pingTimeout);
     preferences.putULong("bigTimeout", bigTimeout);
     preferences.putULong("execTo", execTimeout); 
+    preferences.putBool("dynPwr", dynamicPower);
+    preferences.putInt("minPwr", minPower);
+    preferences.putInt("srvPwr", servicePower);
     
     preferences.putULong("pingRx", pingTimeoutRX); 
     preferences.putBool("rxEnBigLed", rxSettings.rxEnableBigLed);
@@ -94,5 +107,9 @@
     preferences.putULong("rxCutoff", rxSettings.rxCutoffTime);
     
     preferences.end();
+    
+    // Синхронизируем структуру перед возможной отправкой
+    rxSettings.maxPower = maxPower;
+    
     DEBUGln(F("Config saved."));
  } // конец функции saveConfig

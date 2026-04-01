@@ -1,125 +1,138 @@
 /**
  * @file webpage.h
- * @version 1.36 (Добавлено поле таймаута настроек сигнала)
+ * @version 1.64 (Добавлены параметры управления мощностью: динамическая, макс, мин, сервисная)
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
-#ifndef WEBPAGE_H
-#define WEBPAGE_H
-
-#include <Arduino.h>
-
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML>
-<html lang="ru">
-<head>
-   <meta charset="UTF-8">
-   <meta name="viewport" content="width=device-width, initial-scale=1">
-   <title>DavayLoRa Config</title>
-   <style>
-     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; padding: 15px; max-width: 600px; margin: 0 auto; }
-     h2 { text-align: center; color: #4CAF50; margin-bottom: 10px; font-size: 24px;}
-     .timer { text-align: center; color: #ff9800; font-size: 18px; margin-bottom: 20px; font-weight: bold; }
-     fieldset { border: 1px solid #4CAF50; border-radius: 8px; margin-bottom: 25px; padding: 20px; background: #1e1e1e; }
-     legend { color: #4CAF50; font-weight: bold; font-size: 18px; padding: 0 10px; }
-     label { display: block; margin-top: 15px; margin-bottom: 5px; color: #cccccc; font-size: 14px; }
-     input[type="number"] { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #444; background: #2a2a2a; color: #fff; box-sizing: border-box; font-size: 16px; transition: border 0.3s; }
-     input[type="number"]:focus { border-color: #4CAF50; outline: none; }
-     .checkbox-container { display: flex; align-items: center; margin-top: 15px; background: #2a2a2a; padding: 12px; border-radius: 6px; }
-     input[type="checkbox"] { transform: scale(1.5); margin: 0 10px 0 5px; accent-color: #4CAF50; }
-     .checkbox-container span { font-size: 15px; color: #fff; }
-     .buttons-container { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; margin-top: 10px; }
-     input[type="submit"] { background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
-     input[type="submit"]:hover { background-color: #45a049; }
-     .cancel-btn { background-color: #f44336; color: white; text-decoration: none; padding: 16px; display: flex; align-items: center; justify-content: center; border-radius: 6px; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
-     .cancel-btn:hover { background-color: #d32f2f; }
-   </style>
-   <script>
-     let timeLeft = %TIME_LEFT%;
-     function updateTimer() {
-       if (timeLeft <= 0) {
-         document.getElementById('timeDisplay').innerText = "00:00";
-         alert("⏳ Время конфигурации истекло!");
-         window.location.reload();
-         return;
-       }
-       let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-       let s = (timeLeft % 60).toString().padStart(2, '0');
-       document.getElementById('timeDisplay').innerText = m + ":" + s;
-       timeLeft--;
-       setTimeout(updateTimer, 1000);
-     }
-     window.onload = updateTimer;
-   </script>
-</head>
-<body>
-   <h2>⚙️ Настройка DavayLoRa</h2>
-   <div class="timer">⏳ До автовыхода: <span id="timeDisplay">--:--</span></div>
-   
-   <form action="/save" method="POST">
-     <fieldset>
-       <legend>🌍 Общие настройки</legend>
-       <label>Рабочий канал (0-19):</label>
-       <input type="number" name="workAddress" value="%ADDR%" min="0" max="19" required>
-       <div class="checkbox-container">
-         <input type="checkbox" name="measurebattery" value="1" %BAT_CHK%>
-         <span>Включить проверку батареи</span>
-       </div>
-       <label>Период проверки батареи (мс):</label>
-       <input type="number" name="batteryPeriod" value="%BAT_PER%" min="10000" step="1000" required>
-       <label>Время удержания при вкл. (мс):</label>
-       <input type="number" name="wakeUpHoldTime" value="%WK_HOLD%" min="100" step="100" required>
-       <label>Окно отпускания при вкл. (мс):</label>
-       <input type="number" name="wakeUpReleaseWindow" value="%WK_REL%" min="100" step="100" required>
-       <label>Таймаут заклинивания вкл. (мс):</label>
-       <input type="number" name="stuckSleepTime" value="%STUCK_SL%" min="1000" step="1000" required>
-       <label>Таймаут настроек (мс):</label>
-       <input type="number" name="configTimeout" value="%CONF_TO%" min="60000" step="10000" required>
-       <label>Индикация выключения (мс):</label>
-       <input type="number" name="sleepLedDuration" value="%SLP_LED%" min="100" step="100" required>
-     </fieldset>
-
-     <fieldset>
-       <legend>📡 Пульт (TX)</legend>
-       <label>Яркость LED (0-255):</label>
-       <input type="number" name="pwmledBrightness" value="%TX_BIG_LED%" min="0" max="255" required>
-       <label>Яркость кнопки (0-255):</label>
-       <input type="number" name="fbledBrightness" value="%TX_FB_LED%" min="0" max="255" required>
-       <label>Таймаут Пинга (мс):</label>
-       <input type="number" name="pingTimeout" value="%TX_PING%" min="1000" step="100" required>
-       <label>Таймаут отключения Пинга (мс):</label>
-       <input type="number" name="bigTimeout" value="%TX_BIG_TO%" min="10000" step="1000" required>
-       <label>Таймаут настроек сигнала (мс):</label>
-       <input type="number" name="execTimeout" value="%TX_EXEC_TO%" min="10000" step="1000" required>
-     </fieldset>
-
-     <fieldset>
-       <legend>🔔 Приёмник (RX)</legend>
-       <div class="checkbox-container">
-         <input type="checkbox" name="rxEnableBigLed" value="1" %RX_BIG_EN%>
-         <span>Включить светодиод</span>
-       </div>
-       <label>Яркость светодиода (0-255):</label>
-       <input type="number" name="rxPwmledBrightness" value="%RX_BIG_LED%" min="0" max="255" required>
-       <div class="checkbox-container">
-         <input type="checkbox" name="rxEnableBuzzer" value="1" %RX_BUZ_EN%>
-         <span>Включить вибратор</span>
-       </div>
-       <label>Громкость вибратора (0-255):</label>
-       <input type="number" name="rxBuzzerVolume" value="%RX_BUZ_VOL%" min="0" max="255" required>
-       <label>Отсечка постоянного нажатия (мс):</label>
-       <input type="number" name="rxCutoffTime" value="%RX_CUTOFF%" min="100" step="100" required>
-       <label>Таймаут потери Пинга RX (мс):</label>
-       <input type="number" name="pingTimeoutRX" value="%RX_PING%" min="1000" step="100" required>
-     </fieldset>
-
-     <div class="buttons-container">
-       <input type="submit" value="💾 Сохранить и Перезагрузить">
-       <a href="/cancel" class="cancel-btn">❌ Отмена</a>
-     </div>
-   </form>
-</body>
-</html>
-)rawliteral";
-
-#endif
+ #ifndef WEBPAGE_H
+ #define WEBPAGE_H
+ 
+ #include <Arduino.h>
+ 
+ const char index_html[] PROGMEM = R"rawliteral(
+ <!DOCTYPE HTML>
+ <html lang="ru">
+ <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DavayLoRa Config</title>
+    <style>
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; padding: 15px; max-width: 600px; margin: 0 auto; }
+      h2 { text-align: center; color: #4CAF50; margin-bottom: 10px; font-size: 24px;}
+      .timer { text-align: center; color: #ff9800; font-size: 18px; margin-bottom: 20px; font-weight: bold; }
+      fieldset { border: 1px solid #4CAF50; border-radius: 8px; margin-bottom: 25px; padding: 20px; background: #1e1e1e; }
+      legend { color: #4CAF50; font-weight: bold; font-size: 18px; padding: 0 10px; }
+      label { display: block; margin-top: 15px; margin-bottom: 5px; color: #cccccc; font-size: 14px; }
+      input[type="number"] { width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #444; background: #2a2a2a; color: #fff; box-sizing: border-box; font-size: 16px; transition: border 0.3s; }
+      input[type="number"]:focus { border-color: #4CAF50; outline: none; }
+      .checkbox-container { display: flex; align-items: center; margin-top: 15px; background: #2a2a2a; padding: 12px; border-radius: 6px; }
+      input[type="checkbox"] { transform: scale(1.5); margin: 0 10px 0 5px; accent-color: #4CAF50; }
+      .checkbox-container span { font-size: 15px; color: #fff; }
+      .buttons-container { display: flex; flex-direction: column; gap: 15px; margin-bottom: 30px; margin-top: 10px; }
+      input[type="submit"] { background-color: #4CAF50; color: white; padding: 16px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
+      input[type="submit"]:hover { background-color: #45a049; }
+      .cancel-btn { background-color: #f44336; color: white; text-decoration: none; padding: 16px; display: flex; align-items: center; justify-content: center; border-radius: 6px; width: 100%; font-size: 18px; font-weight: bold; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.3); box-sizing: border-box; }
+      .cancel-btn:hover { background-color: #d32f2f; }
+    </style>
+    <script>
+      let timeLeft = %TIME_LEFT%;
+      function updateTimer() {
+        if (timeLeft <= 0) {
+          document.getElementById('timeDisplay').innerText = "00:00";
+          alert("⏳ Время конфигурации истекло!");
+          window.location.reload();
+          return;
+        }
+        let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+        let s = (timeLeft % 60).toString().padStart(2, '0');
+        document.getElementById('timeDisplay').innerText = m + ":" + s;
+        timeLeft--;
+        setTimeout(updateTimer, 1000);
+      }
+      window.onload = updateTimer;
+    </script>
+ </head>
+ <body>
+    <h2>⚙️ Настройка DavayLoRa</h2>
+    <div class="timer">⏳ До автовыхода: <span id="timeDisplay">--:--</span></div>
+    
+    <form action="/save" method="POST">
+      <fieldset>
+        <legend>🌍 Общие настройки</legend>
+        <label>Рабочий канал (0-19):</label>
+        <input type="number" name="workAddress" value="%ADDR%" min="0" max="19" required>
+        
+        <label>Максимальная мощность (0-22 дБм):</label>
+        <input type="number" name="maxPower" value="%MAX_PWR%" min="0" max="22" required>
+        
+        <div class="checkbox-container">
+          <input type="checkbox" name="measurebattery" value="1" %BAT_CHK%>
+          <span>Включить проверку батареи</span>
+        </div>
+        <label>Период проверки батареи (мс):</label>
+        <input type="number" name="batteryPeriod" value="%BAT_PER%" min="10000" step="1000" required>
+        <label>Время удержания при вкл. (мс):</label>
+        <input type="number" name="wakeUpHoldTime" value="%WK_HOLD%" min="100" step="100" required>
+        <label>Окно отпускания при вкл. (мс):</label>
+        <input type="number" name="wakeUpReleaseWindow" value="%WK_REL%" min="100" step="100" required>
+        <label>Таймаут заклинивания вкл. (мс):</label>
+        <input type="number" name="stuckSleepTime" value="%STUCK_SL%" min="1000" step="1000" required>
+        <label>Таймаут настроек (мс):</label>
+        <input type="number" name="configTimeout" value="%CONF_TO%" min="60000" step="10000" required>
+        <label>Индикация выключения (мс):</label>
+        <input type="number" name="sleepLedDuration" value="%SLP_LED%" min="100" step="100" required>
+      </fieldset>
+ 
+      <fieldset>
+        <legend>🔘 Пульт (TX)</legend>
+        <div class="checkbox-container">
+          <input type="checkbox" name="dynamicPower" value="1" %DYN_PWR%>
+          <span>Переменная мощность (Адаптация)</span>
+        </div>
+        <label>Минимальная мощность (-9...0 дБм):</label>
+        <input type="number" name="minPower" value="%MIN_PWR%" min="-9" max="0" required>
+        <label>Мощность настройки (0-22 дБм):</label>
+        <input type="number" name="servicePower" value="%SRV_PWR%" min="0" max="22" required>
+        
+        <label>Яркость LED (0-255):</label>
+        <input type="number" name="pwmledBrightness" value="%TX_BIG_LED%" min="0" max="255" required>
+        <label>Яркость кнопки (0-255):</label>
+        <input type="number" name="fbledBrightness" value="%TX_FB_LED%" min="0" max="255" required>
+        <label>Таймаут Пинга (мс):</label>
+        <input type="number" name="pingTimeout" value="%TX_PING%" min="1000" step="100" required>
+        <label>Таймаут отключения Пинга (мс):</label>
+        <input type="number" name="bigTimeout" value="%TX_BIG_TO%" min="10000" step="1000" required>
+        <label>Таймаут настроек сигнала (мс):</label>
+        <input type="number" name="execTimeout" value="%TX_EXEC_TO%" min="10000" step="1000" required>
+      </fieldset>
+ 
+      <fieldset>
+        <legend>💡🔔 Приёмник (RX)</legend>
+        <div class="checkbox-container">
+          <input type="checkbox" name="rxEnableBigLed" value="1" %RX_BIG_EN%>
+          <span>Включить светодиод</span>
+        </div>
+        <label>Яркость светодиода (0-255):</label>
+        <input type="number" name="rxPwmledBrightness" value="%RX_BIG_LED%" min="0" max="255" required>
+        <div class="checkbox-container">
+          <input type="checkbox" name="rxEnableBuzzer" value="1" %RX_BUZ_EN%>
+          <span>Включить вибратор</span>
+        </div>
+        <label>Громкость вибратора (0-255):</label>
+        <input type="number" name="rxBuzzerVolume" value="%RX_BUZ_VOL%" min="0" max="255" required>
+        <label>Отсечка постоянного нажатия (мс):</label>
+        <input type="number" name="rxCutoffTime" value="%RX_CUTOFF%" min="100" step="100" required>
+        <label>Таймаут потери Пинга RX (мс):</label>
+        <input type="number" name="pingTimeoutRX" value="%RX_PING%" min="1000" step="100" required>
+      </fieldset>
+ 
+      <div class="buttons-container">
+        <input type="submit" value="💾 Сохранить и Перезагрузить">
+        <a href="/cancel" class="cancel-btn">❌ Отмена</a>
+      </div>
+    </form>
+ </body>
+ </html>
+ )rawliteral";
+ 
+ #endif

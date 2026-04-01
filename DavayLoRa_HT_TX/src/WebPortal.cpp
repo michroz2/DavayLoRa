@@ -1,7 +1,7 @@
 /**
  * @file WebPortal.cpp
- * @version 1.56
- * @brief Реализация Captive Portal (TX)
+ * @version 1.64
+ * @brief Реализация Captive Portal (TX) с поддержкой настроек мощности
  */
  #include "WebPortal.h"
  #include "Config.h"
@@ -56,6 +56,12 @@
     html.replace("%TX_PING%", String(pingTimeout));
     html.replace("%TX_BIG_TO%", String(bigTimeout));
     html.replace("%TX_EXEC_TO%", String(execTimeout));
+    
+    // Новые параметры мощности
+    html.replace("%DYN_PWR%", dynamicPower ? "checked" : "");
+    html.replace("%MAX_PWR%", String(maxPower));
+    html.replace("%MIN_PWR%", String(minPower));
+    html.replace("%SRV_PWR%", String(servicePower));
  
     html.replace("%RX_BIG_EN%", rxSettings.rxEnableBigLed ? "checked" : "");
     html.replace("%RX_BIG_LED%", String(rxSettings.rxPwmledBrightness));
@@ -86,6 +92,9 @@
     rxSettings.rxBuzzerVolume = server.arg("rxBuzzerVolume").toInt();
     rxSettings.rxCutoffTime = server.arg("rxCutoffTime").toInt();
     rxSettings.pingTimeoutRX = server.arg("pingTimeoutRX").toInt();
+    
+    // Захватываем maxPower, чтобы передать его на приемник при синхронизации
+    rxSettings.maxPower = server.arg("maxPower").toInt();
  
     // Синхронизация с RX перед сохранением
     if (syncConfigToRX()) {
@@ -102,12 +111,19 @@
       stuckSleepTime = rxSettings.stuckSleepTime;
       configTimeout = rxSettings.configTimeout;
       sleepLedDuration = rxSettings.sleepLedDuration;
+      maxPower = rxSettings.maxPower; // Сохраняем лимит мощности
       
       pwmledBrightness = server.arg("pwmledBrightness").toInt();
       fbledBrightness = server.arg("fbledBrightness").toInt();
       pingTimeout = server.arg("pingTimeout").toInt();
       bigTimeout = server.arg("bigTimeout").toInt();
       execTimeout = server.arg("execTimeout").toInt();
+      
+      // Захватываем новые параметры мощности пульта
+      dynamicPower = server.hasArg("dynamicPower");
+      minPower = server.arg("minPower").toInt();
+      servicePower = server.arg("servicePower").toInt();
+      
       pingTimeoutRX = rxSettings.pingTimeoutRX;
  
       saveConfig();
