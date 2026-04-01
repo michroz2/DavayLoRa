@@ -1,6 +1,7 @@
 /**
  * @file main.cpp (TX)
- * @version 1.66 (TX: Интеграция Web-настроек мощности + Возврат комментариев форматирования)
+ * @version 1.68
+ * Изменение: Улучшен вывод логов пинга (разделение локального и удаленного RSSI). Обновлены логи инициализации в setup согласно правилам оформления (добавлены макросы даты/времени).
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
@@ -459,7 +460,10 @@
             // Распаковка RSSI из ответа
             byte rssiRaw = rcvData & 0x7F;
             int rxRssi = -(int)(rssiRaw + 30);
-            DEBUG(F("[PING] Response Rx RSSI: ")); DEBUGln(rxRssi);
+            
+            // Изменение: Разделен лог RSSI на локальный и удаленный для удобства диагностики
+            DEBUG(F("[PING] Response RSSI: ")); DEBUGln(radio.getRSSI());
+            DEBUG(F("[PING] Loopback RSSI: ")); DEBUGln(rxRssi);
             
             // Вычисление Дельты и Адаптация мощности
             int pathLoss = currentTxPower - rxRssi;
@@ -513,8 +517,9 @@
     while (!Serial); 
  #endif
  
-    DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.66 ==========="));
+    // Изменение: Форматирование стартового лога по правилам (10 символов '=', название, модуль, версия, макросы времени)
+    DEBUGln(F("========== DavayLoRa TX v1.68 =========="));
+    DEBUG(F("[INFO] Compiled: ")); DEBUG(__DATE__); DEBUG(F(" ")); DEBUGln(__TIME__);
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -584,7 +589,8 @@
     setCpuFrequencyMhz(80);
     // ---------------------------------------------------------------------
     
-    DEBUGln(F("[STATE] Setup complete"));
+    // Изменение: Финальный лог setup по правилам
+    DEBUGln(F("[ACTION] SETUP COMPLETE "));
  } // конец функции setup
  
  void loop() {
