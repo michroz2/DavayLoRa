@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.59 (TX: Добавлено логирование всех состояний кнопки USER)
+ * @version 1.64 (TX: Плавный безопасный спуск мощности (Target clamping) и связка Action-Ping)
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
@@ -53,6 +53,14 @@
  unsigned long pingTimer;
  unsigned long pingFlashTimer;
  bool pingFlash;
+ 
+ // --- ПЕРЕМЕННЫЕ АДАПТАЦИИ МОЩНОСТИ ---
+ int currentTxPower = 22;      // Текущая мощность для пингов
+ const int servicePower = 18;  // Мощность для сервисных команд
+ const int actionPower = 22;   // Мощность для "Action!"
+ const int minPowerLimit = -9; // Минимальный порог (аппаратный лимит SX1262)
+ const int targetRssi = -95;   // Целевой уровень сигнала на стороне RX
+ // --------------------------------------
  
  enum SystemState {
     STATE_NORMAL,          // Рабочий режим (передача сигналов)
@@ -222,6 +230,9 @@
  
  void sleepSystem() {
     DEBUGln(F("[ACTION] Sending Centralized SLEEP Command"));
+    currentTxPower = servicePower; // Привязка адаптации к сервисной мощности
+    radio.setOutputPower(currentTxPower);
+    DEBUG(F("[RADIO] Send SLEEP (Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm)"));
     commSession(CMD_SLEEP, 1, CMD_SLEEP_OK, 500, WORK_COMM_ATTEMPTS);
     
     updateStatusLed(true); delay(sleepLedDuration); updateStatusLed(false);
@@ -241,9 +252,13 @@
         DEBUGln(F("[ACTION] Main Button PRESSED"));
         if (currentState == STATE_NORMAL) {
           buttonPressStartTime = millis(); pingTimer = millis(); buttonPressedFirstTime = true;
-          // Передача сигнала "ACTION!"
+          // Передача сигнала "ACTION!" на максимальной мощности
+          currentTxPower = actionPower; // Инфекция адаптивной переменной максимальной мощностью
+          radio.setOutputPower(currentTxPower);
+          DEBUG(F("[RADIO] Send ACTION (Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm)"));
           if (commSession(CMD_SIGNAL, 1, CMD_SIGNAL_OK, 300, WORK_COMM_ATTEMPTS)) {
             updateStatusLed(true); updateBIGLed(true);    
+            DEBUG(F("[RADIO] RX RSSI: ")); DEBUGln(radio.getRSSI());
           } else { updateBIGLed(false); flashStatusLed(2); }
         } else if (currentState == STATE_PREPARATION) {
           prepClickCount++; lastPrepClickTime = millis(); prepModeTimer = millis(); 
@@ -255,7 +270,9 @@
       } else { // Отпущена
         DEBUGln(F("[ACTION] Main Button RELEASED"));
         if (currentState == STATE_NORMAL) {
-          // Отмена сигнала "ACTION!"
+          // Отмена сигнала "ACTION!" на максимальной мощности
+          currentTxPower = actionPower;
+          radio.setOutputPower(currentTxPower);
           sendMessage(CMD_SIGNAL, false); updateStatusLed(false); updateBIGLed(false);
         } // конец условия для нормального режима
       } // конец условия проверки нажатия
@@ -301,21 +318,25 @@
  
     // Проверка завершения ввода серии кликов
     if (prepClickCount > 0 && (millis() - lastPrepClickTime > 600)) {
+      currentTxPower = servicePower;
+      radio.setOutputPower(currentTxPower);
       if (prepClickCount == 2) { 
         // 2 клика: Выключение приборов (Сон)
         sleepSystem(); 
       } else if (prepClickCount == 3) {
         // 3 клика: Смена типа сигнала актеру (свет/вибро)
-        commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 500, WORK_COMM_ATTEMPTS);
-        DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
-        currentState = STATE_EXEC_CONFIG; execModeTimer = millis(); 
-        execBlinkActive = true; execBlinkStartTime = millis(); execClickCount = 0;
+        if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 500, WORK_COMM_ATTEMPTS)) {
+          DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
+          currentState = STATE_EXEC_CONFIG; execModeTimer = millis(); 
+          execBlinkActive = true; execBlinkStartTime = millis(); execClickCount = 0;
+        }
       } else if (prepClickCount == 4) {
         // 4 клика: Полная настройка через телефон (Wi-Fi Портал)
-        commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 500, WORK_COMM_ATTEMPTS);
-        DEBUGln(F("[STATE] ---> STATE_CONFIG_STANDBY"));
-        currentState = STATE_CONFIG_STANDBY; pingTimer = millis();
-        configBlinkActive = true; configBlinkStartTime = millis(); configClickCount = 0;
+        if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 500, WORK_COMM_ATTEMPTS)) {
+          DEBUGln(F("[STATE] ---> STATE_CONFIG_STANDBY"));
+          currentState = STATE_CONFIG_STANDBY; pingTimer = millis();
+          configBlinkActive = true; configBlinkStartTime = millis(); configClickCount = 0;
+        }
       } else {
         DEBUGln(F("[STATE] ---> STATE_NORMAL (Invalid clicks)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
@@ -338,6 +359,8 @@
       if (configClickCount == 2) {
         // 2 клика: Возврат в рабочий режим
         if (isWifiActive) stopWiFiPortal();
+        currentTxPower = servicePower;
+        radio.setOutputPower(currentTxPower);
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
         DEBUGln(F("[STATE] ---> STATE_NORMAL (Exited Config via button)"));
         currentState = STATE_NORMAL; updateStatusLed(false);
@@ -350,6 +373,8 @@
  
     // Keep-alive для удержания приемника в режиме настройки
     if ((millis() - pingTimer) > pingTimeout) {
+      currentTxPower = servicePower;
+      radio.setOutputPower(currentTxPower);
       if (commSession(CMD_CONFIG, 1, CMD_CONFIG_OK, 500, WORK_COMM_ATTEMPTS)) {
         configBlinkActive = true; configBlinkStartTime = millis(); 
       } else {
@@ -367,11 +392,15 @@
  
     if (millis() - execModeTimer > execTimeout) {
       DEBUGln(F("[STATE] Exec Config Inactivity Timeout -> Exit to STATE_NORMAL"));
+      currentTxPower = servicePower;
+      radio.setOutputPower(currentTxPower);
       commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
       currentState = STATE_NORMAL; updateStatusLed(false); execClickCount = 0;
     } // конец условия таймаута бездействия пользователя
  
     if (execClickCount > 0 && (millis() - lastExecClickTime > 600)) {
+      currentTxPower = servicePower;
+      radio.setOutputPower(currentTxPower);
       if (execClickCount == 2) {
         // 2 клика: Выход и сохранение
         commSession(CMD_NORMAL_MODE, 1, CMD_NORMAL_MODE_OK, 500, WORK_COMM_ATTEMPTS);
@@ -390,6 +419,8 @@
  
     // Keep-alive
     if ((millis() - pingTimer) > pingTimeout) {
+      currentTxPower = servicePower;
+      radio.setOutputPower(currentTxPower);
       if (commSession(CMD_EXEC_CONFIG, 1, CMD_EXEC_CONFIG_OK, 500, WORK_COMM_ATTEMPTS)) {
         execBlinkActive = true; execBlinkStartTime = millis(); 
       } else {
@@ -409,10 +440,50 @@
         pingFlash = false; updateStatusLed(currButtonState);
       } // конец условия гашения вспышки
     } else if ((millis() - pingTimer) > pingTimeout) {
-      if (commSession(CMD_PING, currButtonState, CMD_PING_OK, 500, WORK_COMM_ATTEMPTS)) {
+      
+      // Упаковка мощности (currentTxPower + 10) и состояния кнопки (бит 7)
+      byte safePower = (byte)(constrain(currentTxPower, -9, 22) + 10);
+      byte packedData = (currButtonState << 7) | (safePower & 0x7F);
+      
+      radio.setOutputPower(currentTxPower);
+      DEBUG(F("[PING] Tx Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm"));
+      
+      if (commSession(CMD_PING, packedData, CMD_PING_OK, 500, WORK_COMM_ATTEMPTS)) {
         updateStatusLed(!currButtonState); pingFlash = true;
         pingFlashTimer = millis(); pingTimer = millis();
-      } else { flashStatusLed(2); } // Ошибка связи: двойная вспышка
+        
+        // Распаковка RSSI из ответа
+        byte rssiRaw = rcvData & 0x7F;
+        int rxRssi = -(int)(rssiRaw + 30);
+        DEBUG(F("[PING] Response Rx RSSI: ")); DEBUGln(rxRssi);
+        
+        // Вычисление Дельты и Адаптация мощности
+        int pathLoss = currentTxPower - rxRssi;
+        int idealPower = targetRssi + pathLoss;
+        
+        if (idealPower > currentTxPower) {
+          currentTxPower = idealPower; // Fast UP (мгновенный прыжок)
+        } else if (idealPower < currentTxPower) {
+          // Безопасный спуск по алгоритму половины пути
+          int safeTarget = idealPower;
+          if (safeTarget < minPowerLimit) safeTarget = minPowerLimit; // Ограничиваем расчётное дно лимитом прибора
+          
+          int nextPower = (currentTxPower + safeTarget) / 2; // Ровно посередине
+          
+          // Защита от зависания при делении: минимальный шаг вниз = 1 дБм
+          if (currentTxPower - nextPower < 1) nextPower = currentTxPower - 1;
+          
+          currentTxPower = nextPower;
+        }
+        
+        currentTxPower = constrain(currentTxPower, minPowerLimit, 22);
+        DEBUG(F("[PING] Adaptive Next Power: ")); DEBUG(currentTxPower); DEBUGln(F(" dBm"));
+        
+      } else { 
+        flashStatusLed(2); 
+        currentTxPower = actionPower; // Режим паники: возврат на максимум при потере связи
+        DEBUGln(F("[PING] Link Lost! Reset to 22 dBm"));
+      } // Ошибка связи: двойная вспышка
     } // конец проверки таймера пинга
     
     if ((millis() - lastButtonTime) > bigTimeout) {
@@ -438,12 +509,8 @@
     while (!Serial); 
  #endif
  
-    // --- СНИЖЕНИЕ ЧАСТОТЫ ПРОЦЕССОРА ДЛЯ ЭКОНОМИИ ЭНЕРГИИ В РАБОЧЕМ РЕЖИМЕ ---
-    setCpuFrequencyMhz(80);
-    // -------------------------------------------------------------------------
- 
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START TX v1.59 ==========="));
+    DEBUGln(F("=========== START TX v1.64 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_BUTTON, INPUT_PULLUP);
@@ -512,8 +579,17 @@
     int state = radio.begin(workFrequency / 1000000.0);
     if (state != RADIOLIB_ERR_NONE) while (true) { flashStatusLed(6); delay(4000); }
     setLoRaParams();
+    
+    // Максимальная чувствительность приемника
+    radio.setRxBoostedGainMode(true);
+    
     radio.setDio1Action(setFlag);
     radio.startReceive();
+    
+    // --- СНИЖЕНИЕ ЧАСТОТЫ ПРОЦЕССОРА ТОЛЬКО ПОСЛЕ ПОЛНОЙ ИНИЦИАЛИЗАЦИИ ---
+    // Спасает стек ipc1 от переполнения на старте!
+    setCpuFrequencyMhz(80);
+    // ---------------------------------------------------------------------
     
     DEBUGln(F("[STATE] Setup complete"));
  } // конец функции setup

@@ -1,6 +1,6 @@
 /**
  * @file main.cpp (RX)
- * @version 1.59 (RX: Добавлено логирование всех состояний кнопки USER)
+ * @version 1.63 (RX: Возврат оригинального форматирования + Зеркальный адаптивный ответ)
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Описание: Ядро стейт-машины, логика переключения режимов и обработка геркона/кнопки.
  */
@@ -231,25 +231,41 @@
  
  // Исполнение команд, принятых из эфира
  void processCommand() {
-    DEBUG(F("[ACTION] Processing Command: ")); DEBUGln(rcvCmd);
+    int currentRssi = (int)radio.getRSSI();
+    DEBUG(F("[RADIO] RX Cmd: ")); DEBUG(rcvCmd); DEBUG(F(" | RSSI: ")); DEBUGln(currentRssi);
+ 
     switch (rcvCmd) {
       case CMD_SIGNAL:
         // Главный рабочий сигнал (Вкл/Выкл свет или вибро у актера)
         signalStatus = rcvData; processSignal();
+        radio.setOutputPower(22); // Ответы на Action всегда на макс
         if (signalStatus) sendMessage(rcvAddress, CMD_SIGNAL_OK, signalStatus); 
         break;
       case CMD_PING: {
-        // Синхронное моргание для подтверждения качества связи
-        unsigned long flashStatus = millis();
-        signalStatus = rcvData; processSignal();
+        // Синхронное моргание для подтверждения качества связи и АДАПТИВНАЯ МОЩНОСТЬ
+        // Распаковка требуемой мощности от TX
+        int reqPower = (int)(rcvData & 0x7F) - 10;
+        signalStatus = (rcvData >> 7) & 0x01;
+        
+        processSignal();
         updateStatusLed(true);
-        unsigned long restDelay = 100 - (millis() - flashStatus);
-        if (restDelay > 0) delay(restDelay);
-        updateStatusLed(false);
-        sendMessage(rcvAddress, CMD_PING_OK, signalStatus);     
+        
+        // Безопасная упаковка RSSI (защита от отрицательного переполнения)
+        int safeRssi = abs(currentRssi);
+        if (safeRssi < 30) safeRssi = 30; // Лимит SX1262
+        byte packedRssi = (byte)(safeRssi - 30);
+        byte replyByte = (signalStatus << 7) | (packedRssi & 0x7F);
+        
+        radio.setOutputPower(reqPower);
+        DEBUG(F("[PING] Reply Power: ")); DEBUG(reqPower); DEBUGln(F(" dBm"));
+        sendMessage(rcvAddress, CMD_PING_OK, replyByte);     
+        
+        delay(50); updateStatusLed(false);
+        radio.setOutputPower(22); // Возврат на 22 дБм для готовности к Action
         break;
       } // конец обработки CMD_PING
       case CMD_SLEEP:
+        radio.setOutputPower(22);
         sendMessage(rcvAddress, CMD_SLEEP_OK, 1); 
         delay(100); goToSleep();
         break;
@@ -257,6 +273,7 @@
         DEBUGln(F("[STATE] ---> STATE_CONFIG"));
         currentState = STATE_CONFIG;
         pingTimeOutLastTime = millis();
+        radio.setOutputPower(22);
         sendMessage(rcvAddress, CMD_CONFIG_OK, 1);
         configBlinkActive = true; configBlinkStartTime = millis(); 
         analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
@@ -265,6 +282,7 @@
         DEBUGln(F("[STATE] ---> STATE_EXEC_CONFIG"));
         currentState = STATE_EXEC_CONFIG;
         pingTimeOutLastTime = millis();
+        radio.setOutputPower(22);
         sendMessage(rcvAddress, CMD_EXEC_CONFIG_OK, 1);
         execBlinkActive = true; execBlinkStartTime = millis(); 
         analogWrite(PIN_SIGNAL_LED, 0); analogWrite(PIN_SIGNAL_BUZZERS, 0);
@@ -286,6 +304,7 @@
         DEBUG(F("[STATE] Actuators updated. LED: ")); DEBUG(enableBigLed);
         DEBUG(F(", BUZZER: ")); DEBUGln(enableBuzzer);
         
+        radio.setOutputPower(22);
         sendMessage(rcvAddress, CMD_CYCLE_EXEC_OK, state);
         
         // Демонстрация актеру выбранного режима (длится 1 сек)
@@ -299,6 +318,7 @@
         currentState = STATE_NORMAL;
         pingTimeOutLastTime = millis();
         updateStatusLed(false);
+        radio.setOutputPower(22);
         sendMessage(rcvAddress, CMD_NORMAL_MODE_OK, 1);
         break;
     } // конец switch
@@ -366,12 +386,8 @@
     while (!Serial); 
  #endif
  
-    // --- СНИЖЕНИЕ ЧАСТОТЫ ПРОЦЕССОРА ДЛЯ ЭКОНОМИИ ЭНЕРГИИ В РАБОЧЕМ РЕЖИМЕ ---
-    setCpuFrequencyMhz(80);
-    // -------------------------------------------------------------------------
- 
     DEBUGln(F("================================"));
-    DEBUGln(F("=========== START RX v1.59 ==========="));
+    DEBUGln(F("=========== START RX v1.63 ==========="));
     
     DEBUGln(F("[STATE] Initializing GPIO pins..."));
     pinMode(PIN_REED, INPUT_PULLUP);
@@ -454,10 +470,20 @@
     } // конец проверки инициализации радио
  
     setLoRaParams();
+    
+    // Максимальная чувствительность приемника
+    radio.setRxBoostedGainMode(true);
+    
     radio.setDio1Action(setFlag);
     radio.startReceive();
  
     pingTimeOutLastTime = millis();
+    
+    // --- СНИЖЕНИЕ ЧАСТОТЫ ПРОЦЕССОРА ТОЛЬКО ПОСЛЕ ПОЛНОЙ ИНИЦИАЛИЗАЦИИ ---
+    // Спасает стек ipc1 от переполнения на старте!
+    setCpuFrequencyMhz(80);
+    // ---------------------------------------------------------------------
+    
     DEBUGln(F("[STATE] Setup complete"));
  } // конец функции setup
  
