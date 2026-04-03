@@ -1,6 +1,6 @@
 /**
  * @file webpage.h
- * @version 1.64 (Добавлены параметры управления мощностью: динамическая, макс, мин, сервисная)
+ * @version 1.71 (Добавлен справочный вывод рабочей частоты %FREQ_MHZ%)
  * @brief HTML-интерфейс для Captive Portal (TX)
  */
 
@@ -55,74 +55,75 @@
  <body>
     <h2>⚙️ Настройка DavayLoRa</h2>
     <div class="timer">⏳ До автовыхода: <span id="timeDisplay">--:--</span></div>
-    
+    <div style="text-align: center; color: #4CAF50; font-size: 16px; margin-bottom: 20px; font-weight: bold;">📡 Рабочая частота: %FREQ_MHZ% МГц</div>
+
     <form action="/save" method="POST">
       <fieldset>
         <legend>🌍 Общие настройки</legend>
-        <label>Рабочий канал (0-19):</label>
+        <label title="По умолчанию: 4">Рабочий канал (0-19):</label>
         <input type="number" name="workAddress" value="%ADDR%" min="0" max="19" required>
         
-        <label>Максимальная мощность (0-22 дБм):</label>
+        <label title="По умолчанию: 20 dBm">Максимальная мощность (0-22 дБм):</label>
         <input type="number" name="maxPower" value="%MAX_PWR%" min="0" max="22" required>
         
         <div class="checkbox-container">
-          <input type="checkbox" name="measurebattery" value="1" %BAT_CHK%>
+          <input type="checkbox" name="measurebattery" value="1" %BAT_CHK% title="По умолчанию: Включено">
           <span>Включить проверку батареи</span>
         </div>
-        <label>Период проверки батареи (мс):</label>
+        <label title="По умолчанию: 300000 мс (5 минут)">Период проверки батареи (мс):</label>
         <input type="number" name="batteryPeriod" value="%BAT_PER%" min="10000" step="1000" required>
-        <label>Время удержания при вкл. (мс):</label>
+        <label title="По умолчанию: 2000 мс">Время удержания при вкл. (мс):</label>
         <input type="number" name="wakeUpHoldTime" value="%WK_HOLD%" min="100" step="100" required>
-        <label>Окно отпускания при вкл. (мс):</label>
+        <label title="По умолчанию: 2000 мс">Окно отпускания при вкл. (мс):</label>
         <input type="number" name="wakeUpReleaseWindow" value="%WK_REL%" min="100" step="100" required>
-        <label>Таймаут заклинивания вкл. (мс):</label>
+        <label title="По умолчанию: 10000 мс (10 сек)">Таймаут заклинивания вкл. (мс):</label>
         <input type="number" name="stuckSleepTime" value="%STUCK_SL%" min="1000" step="1000" required>
-        <label>Таймаут настроек (мс):</label>
+        <label title="По умолчанию: 600000 мс (10 минут)">Таймаут настроек (мс):</label>
         <input type="number" name="configTimeout" value="%CONF_TO%" min="60000" step="10000" required>
-        <label>Индикация выключения (мс):</label>
+        <label title="По умолчанию: 2000 мс">Индикация выключения (мс):</label>
         <input type="number" name="sleepLedDuration" value="%SLP_LED%" min="100" step="100" required>
       </fieldset>
  
       <fieldset>
         <legend>🔘 Пульт (TX)</legend>
         <div class="checkbox-container">
-          <input type="checkbox" name="dynamicPower" value="1" %DYN_PWR%>
+          <input type="checkbox" name="dynamicPower" value="1" %DYN_PWR% title="По умолчанию: Включено">
           <span>Переменная мощность (Адаптация)</span>
         </div>
-        <label>Минимальная мощность (-9...0 дБм):</label>
+        <label title="По умолчанию: -9 дБм">Минимальная мощность (-9...0 дБм):</label>
         <input type="number" name="minPower" value="%MIN_PWR%" min="-9" max="0" required>
-        <label>Мощность настройки (0-22 дБм):</label>
+        <label title="По умолчанию: 18 дБм">Мощность настройки (0-22 дБм):</label>
         <input type="number" name="servicePower" value="%SRV_PWR%" min="0" max="22" required>
         
-        <label>Яркость LED (0-255):</label>
+        <label title="По умолчанию: 35">Яркость LED (0-255):</label>
         <input type="number" name="pwmledBrightness" value="%TX_BIG_LED%" min="0" max="255" required>
-        <label>Яркость кнопки (0-255):</label>
+        <label title="По умолчанию: 255">Яркость кнопки (0-255):</label>
         <input type="number" name="fbledBrightness" value="%TX_FB_LED%" min="0" max="255" required>
-        <label>Таймаут Пинга (мс):</label>
+        <label title="По умолчанию: 3000 мс">Таймаут Пинга (мс):</label>
         <input type="number" name="pingTimeout" value="%TX_PING%" min="1000" step="100" required>
-        <label>Таймаут отключения Пинга (мс):</label>
+        <label title="По умолчанию: 3600000 мс (1 час)">Таймаут отключения Пинга (мс):</label>
         <input type="number" name="bigTimeout" value="%TX_BIG_TO%" min="10000" step="1000" required>
-        <label>Таймаут настроек сигнала (мс):</label>
+        <label title="По умолчанию: 30000 мс (30 сек)">Таймаут настроек сигнала (мс):</label>
         <input type="number" name="execTimeout" value="%TX_EXEC_TO%" min="10000" step="1000" required>
       </fieldset>
  
       <fieldset>
         <legend>💡🔔 Приёмник (RX)</legend>
         <div class="checkbox-container">
-          <input type="checkbox" name="rxEnableBigLed" value="1" %RX_BIG_EN%>
+          <input type="checkbox" name="rxEnableBigLed" value="1" %RX_BIG_EN% title="По умолчанию: Включено">
           <span>Включить светодиод</span>
         </div>
-        <label>Яркость светодиода (0-255):</label>
+        <label title="По умолчанию: 35">Яркость светодиода (0-255):</label>
         <input type="number" name="rxPwmledBrightness" value="%RX_BIG_LED%" min="0" max="255" required>
         <div class="checkbox-container">
-          <input type="checkbox" name="rxEnableBuzzer" value="1" %RX_BUZ_EN%>
+          <input type="checkbox" name="rxEnableBuzzer" value="1" %RX_BUZ_EN% title="По умолчанию: Выключено">
           <span>Включить вибратор</span>
         </div>
-        <label>Громкость вибратора (0-255):</label>
+        <label title="По умолчанию: 255">Громкость вибратора (0-255):</label>
         <input type="number" name="rxBuzzerVolume" value="%RX_BUZ_VOL%" min="0" max="255" required>
-        <label>Отсечка постоянного нажатия (мс):</label>
+        <label title="По умолчанию: 2000 мс">Отсечка постоянного нажатия (мс):</label>
         <input type="number" name="rxCutoffTime" value="%RX_CUTOFF%" min="100" step="100" required>
-        <label>Таймаут потери Пинга RX (мс):</label>
+        <label title="По умолчанию: 9000 мс (9 сек)">Таймаут потери Пинга RX (мс):</label>
         <input type="number" name="pingTimeoutRX" value="%RX_PING%" min="1000" step="100" required>
       </fieldset>
  

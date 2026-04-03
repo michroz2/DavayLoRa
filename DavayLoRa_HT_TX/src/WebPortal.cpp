@@ -1,6 +1,6 @@
 /**
  * @file WebPortal.cpp
- * @version 1.64
+ * @version 1.71 (Добавлен справочный вывод рабочей частоты %FREQ_MHZ%)
  * @brief Реализация Captive Portal (TX) с поддержкой настроек мощности
  */
  #include "WebPortal.h"
@@ -27,7 +27,9 @@
  bool isWifiActive = false;
  unsigned long wifiStartTime = 0;
  bool exitConfigRequested = false;
- 
+ // Внешние переменные из main.cpp
+ extern uint32_t workFrequency;
+
  // Шаблон для вывода крупных сообщений на мобильном экране
  const String MSG_HEADER = F("<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><style>body{font-family:sans-serif;text-align:center;margin-top:30%;font-size:1.5rem;background-color:#f4f4f9;color:#333;}</style></head><body>");
  const String MSG_FOOTER = F("</body></html>");
@@ -41,7 +43,10 @@
     long remainingSec = (configTimeout > elapsed) ? (configTimeout - elapsed) / 1000 : 0;
     html.replace("%TIME_LEFT%", String(remainingSec));
  
-    // Подстановка текущих значений в HTML-шаблон
+   // Вычисление и вывод справочной рабочей частоты в МГц (1 знак после запятой)
+   float freqMHz = workFrequency / 1000000.0;
+   // Подстановка текущих значений в HTML-шаблон
+   html.replace("%FREQ_MHZ%", String(freqMHz, 1));    
     html.replace("%ADDR%", String(workAddress));
     html.replace("%BAT_CHK%", measurebattery ? "checked" : "");
     html.replace("%BAT_PER%", String(batteryPeriod));
@@ -131,7 +136,7 @@
       server.send(200, "text/html", MSG_HEADER + "<h2>✅ SUCCESS!<br>Rebooting...</h2>" + MSG_FOOTER);
       
       DEBUGln(F("[STATE] TX Rebooting now..."));
-      delay(500);
+      delay(1500);
       ESP.restart(); 
     } else {
       server.send(200, "text/html", MSG_HEADER + "<h2>❌ ERROR:<br>RX not responding!</h2>" + MSG_FOOTER);
