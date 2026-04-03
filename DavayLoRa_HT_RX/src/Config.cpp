@@ -17,7 +17,7 @@
  
  Preferences preferences;
  
- byte workAddress = 4;                 
+ byte workAddress = 0;                 
  int pwmledBrightness = 35;            
  int buzzerVolume = 255;               
  unsigned long cutoffTime = 2000;      
@@ -41,7 +41,7 @@
     DEBUGln(F("--- Loading config from NVS ---"));
     preferences.begin("davaylora", false);
     
-    workAddress = preferences.getUChar("workAddress", 4);
+    workAddress = preferences.getUChar("workAddress", 0);
     measurebattery = preferences.getBool("measureBat", true);
     pwmledBrightness = preferences.getInt("bigLedBright", 35);
     buzzerVolume = preferences.getInt("buzzerVol", 255);

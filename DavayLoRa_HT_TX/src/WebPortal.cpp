@@ -28,7 +28,7 @@
  unsigned long wifiStartTime = 0;
  bool exitConfigRequested = false;
  // Внешние переменные из main.cpp
- extern uint32_t workFrequency;
+ extern unsigned long workFrequency;
 
  // Шаблон для вывода крупных сообщений на мобильном экране
  const String MSG_HEADER = F("<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><style>body{font-family:sans-serif;text-align:center;margin-top:30%;font-size:1.5rem;background-color:#f4f4f9;color:#333;}</style></head><body>");

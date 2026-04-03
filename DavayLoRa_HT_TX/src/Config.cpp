@@ -18,7 +18,7 @@
  ConfigPacket rxSettings;
  Preferences preferences; // Объект для работы с NVS (сохранение настроек)
  
- byte workAddress = 4;                 
+ byte workAddress = 0;                 
  bool measurebattery = true;           
  unsigned long batteryPeriod = 300000;    
  unsigned long wakeUpHoldTime = 2000;     

@@ -31,7 +31,7 @@
  #define CMD_CYCLE_EXEC_OK  226
  
  #define WORK_FREQUENCY 434E6
- #define MAX_ADDRESS 20
+ #define MAX_ADDRESS 81
  
  // --- Пины и объекты ---
  extern const int sckPin;
@@ -51,7 +51,7 @@
  extern unsigned long workFrequency;
  extern unsigned long lastSendTime;
  extern volatile bool receivedFlag;
- extern unsigned long workingFrequency[MAX_ADDRESS];
+ //extern unsigned long workingFrequency[MAX_ADDRESS];
  
  // Внешние переменные из main.cpp
  extern unsigned long pingTimeOutLastTime;

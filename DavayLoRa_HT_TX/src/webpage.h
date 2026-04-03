@@ -60,9 +60,9 @@
     <form action="/save" method="POST">
       <fieldset>
         <legend>🌍 Общие настройки</legend>
-        <label title="По умолчанию: 4">Рабочий канал (0-19):</label>
-        <input type="number" name="workAddress" value="%ADDR%" min="0" max="19" required>
-        
+        <label title="434-450 МГц, шаг 0.2">Рабочий канал (0-80):</label>
+        <input type="number" name="workAddress" value="%ADDR%" min="0" max="80" required>
+
         <label title="По умолчанию: 20 dBm">Максимальная мощность (0-22 дБм):</label>
         <input type="number" name="maxPower" value="%MAX_PWR%" min="0" max="22" required>
         

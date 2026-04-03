@@ -1,6 +1,6 @@
 /** Gemini
  * @file main.cpp (RX) 
- * @version 1.67 (RX: Использование глобального лимита maxPower + Полное восстановление структуры и комментариев)
+ * @version 1.72 Внедрена вычисляемая рабочая частота и число каналов 81
  * @brief ПОЛНЫЙ ИСХОДНЫЙ КОД ПРИЁМНИКА (DavayLoRa)
  * Описание: Ядро стейт-машины, логика переключения режимов и обработка геркона/кнопки.
  */
@@ -461,7 +461,7 @@
  
     DEBUGln(F("[STATE] Initializing LoRa radio..."));
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
-    workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
+    workFrequency = WORK_FREQUENCY + ( (workAddress % MAX_ADDRESS) * 200000 );
     DEBUG(F("[RADIO] LoRa Init on Frequency: ")); DEBUGln(workFrequency);
     
     int state = radio.begin(workFrequency / 1000000.0);

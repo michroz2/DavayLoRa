@@ -31,7 +31,7 @@
  #define CMD_CYCLE_EXEC_OK  226  // Подтверждение переключения
  
  #define WORK_FREQUENCY 434E6
- #define MAX_ADDRESS 20
+ #define MAX_ADDRESS 81
  #define DEFAULT_TURNAROUND 300     
  #define WORK_COMM_ATTEMPTS 3       
  
@@ -64,7 +64,7 @@
  
  extern volatile bool receivedFlag; 
  
- extern unsigned long workingFrequency[MAX_ADDRESS];
+ //extern unsigned long workingFrequency[MAX_ADDRESS];
  
  // Внешние переменные из main.cpp
  extern unsigned long pingTimer;

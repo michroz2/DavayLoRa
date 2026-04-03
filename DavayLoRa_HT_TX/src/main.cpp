@@ -1,7 +1,6 @@
 /**
  * @file main.cpp (TX)
- * @version 1.68
- * Изменение: Улучшен вывод логов пинга (разделение локального и удаленного RSSI). Обновлены логи инициализации в setup согласно правилам оформления (добавлены макросы даты/времени).
+ * @version 1.72 Внедрена вычисляемая рабочая частота и число каналов 81
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
  */
@@ -573,7 +572,7 @@
  
     DEBUGln(F("[STATE] Initializing LoRa radio..."));
     SPI.begin(sckPin, misoPin, mosiPin, csPin);
-    workFrequency = workingFrequency[workAddress % MAX_ADDRESS];
+    workFrequency = 434000000 + ( (workAddress % MAX_ADDRESS) * 200000 );
     int state = radio.begin(workFrequency / 1000000.0);
     if (state != RADIOLIB_ERR_NONE) while (true) { flashStatusLed(6); delay(4000); }
     setLoRaParams();
