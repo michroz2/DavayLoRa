@@ -12,7 +12,7 @@
  #include <WiFi.h>        // Добавлено для принудительного отключения модема на старте
  
  #include "Battery.h" 
- #include "Config.h"  
+ #include "Config.h"   
  #include "RadioComm.h" 
  
  // ======================= АППАРАТНАЯ КОНФИГУРАЦИЯ =======================

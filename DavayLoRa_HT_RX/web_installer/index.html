@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Установка прошивки DavayLoRa_RX</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 { color: #0056b3; }
+        p { font-size: 16px; line-height: 1.5; color: #555; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Прошивка DavayLoRa_RX</h1>
+        <p>Подключите ваше устройство Heltec V3 (ESP32-S3) к компьютеру по USB.</p>
+        <p>Нажмите кнопку ниже и выберите COM-порт устройства во всплывающем окне.</p>
+        
+        <br>
+        
+        <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+        
+        <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+    </div>
+</body>
+</html>

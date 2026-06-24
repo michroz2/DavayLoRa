@@ -1,5 +1,5 @@
 /**
- * @file main.cpp (TX)
+ * @file main.cpp (TX) (TEST)
  * @version 1.72 Внедрена вычисляемая рабочая частота и число каналов 81
  * @brief Прошивка передатчика (Transmitter) для проекта DavayLoRa на базе Heltec Wireless Stick Lite V3
  * Описание: Ядро стейт-машины, логика переключения режимов и опроса кнопок.
