@@ -1,3 +1,5 @@
+# build_factory.py для объединения бинарных файлов для веб-инсталлятора DavayLoRa_HT_RX
+
 import os
 
 if 'env' in locals() or 'env' in globals():
